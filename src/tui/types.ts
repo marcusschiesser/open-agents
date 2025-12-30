@@ -1,15 +1,24 @@
-import type { DynamicToolUIPart, InferAgentUIMessage, InferUITools,  ToolUIPart } from "ai";
+import type {
+  DynamicToolUIPart,
+  InferAgentUIMessage,
+  InferUITools,
+  ToolUIPart,
+} from "ai";
 import type { tuiAgent } from "./config";
 
 export type TUIAgent = typeof tuiAgent;
-export type TUIAgentCallOptions = Parameters<TUIAgent["generate"]>["0"]["options"];
+export type TUIAgentCallOptions = Parameters<
+  TUIAgent["generate"]
+>["0"]["options"];
 
 // all derived
 export type TUIAgentUIMessage = InferAgentUIMessage<TUIAgent>;
 export type TUIAgentUIMessagePart = TUIAgentUIMessage["parts"][number];
 export type TUIAgentTools = TUIAgent["tools"];
 export type TUIAgentUITools = InferUITools<TUIAgentTools>;
-export type TUIAgentUIToolPart = DynamicToolUIPart | ToolUIPart<TUIAgentUITools>;
+export type TUIAgentUIToolPart =
+  | DynamicToolUIPart
+  | ToolUIPart<TUIAgentUITools>;
 
 /* --- */
 export type AutoAcceptMode = "off" | "edits" | "all";

@@ -2,12 +2,16 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 import { ChatProvider } from "./chat-context.js";
-import { tuiAgent, tuiAgentModelId, createDefaultAgentOptions } from "./config.js";
+import { tuiAgentModelId, createDefaultAgentOptions } from "./config.js";
 import type { TUIOptions } from "./types.js";
 
 export type { TUIOptions, AutoAcceptMode } from "./types.js";
 export { useChatContext, ChatProvider } from "./chat-context.js";
-export { tuiAgent, tuiAgentModelId, createDefaultAgentOptions } from "./config.js";
+export {
+  tuiAgent,
+  tuiAgentModelId,
+  createDefaultAgentOptions,
+} from "./config.js";
 
 /**
  * Create a Claude Code-style TUI.
@@ -29,7 +33,9 @@ export { tuiAgent, tuiAgentModelId, createDefaultAgentOptions } from "./config.j
  * ```
  */
 export async function createTUI(options: TUIOptions): Promise<void> {
-  const agentOptions = options.agentOptions ?? createDefaultAgentOptions(options.workingDirectory ?? process.cwd());
+  const agentOptions =
+    options.agentOptions ??
+    createDefaultAgentOptions(options.workingDirectory ?? process.cwd());
 
   const { waitUntilExit } = render(
     <ChatProvider
@@ -49,7 +55,9 @@ export async function createTUI(options: TUIOptions): Promise<void> {
  * Useful for programmatic control.
  */
 export function renderTUI(options: TUIOptions) {
-  const agentOptions = options.agentOptions ?? createDefaultAgentOptions(options.workingDirectory ?? process.cwd());
+  const agentOptions =
+    options.agentOptions ??
+    createDefaultAgentOptions(options.workingDirectory ?? process.cwd());
 
   return render(
     <ChatProvider
