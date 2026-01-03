@@ -15,3 +15,19 @@
 - [ ] audit the input implementation (suggestions not working and missing chars)
 - [ ] support for pasting images
 - [ ] update system prompt to lean heavily on subagents
+- [ ] review (and probably remove) all old deep agent tools / instructions (scratchpad)
+    - [ ] explore implementation that doesn't require sandbox? virtual fs
+- [ ] review todos/scratchpad in system prompt
+    - if used, we should use prepareStep to build system prompt again (with this context)
+- [ ] add agents.md support
+- [ ] when pasting more than 3 lines in, we should collapse like other agents
+- [ ] when going through suggestions, you should be able to use ctrl+n to go through to hidden files
+- [ ] command+enter should only delete until the end of the line
+- [ ] sandbox adapter (sandbox.readFile) -> could be mapped to native fs or sandbox command (can live on the experimental_context too)
+
+---
+
+Turn this into full OSS end-to-end CC
+- [ ] cli coding agent
+- [ ] web ui (background agents with sandbox)
+- [ ] slack bot

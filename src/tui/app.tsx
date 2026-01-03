@@ -11,7 +11,7 @@ import { ToolCall } from "./components/tool-call.js";
 import { StatusBar } from "./components/status-bar.js";
 import { InputBox } from "./components/input-box.js";
 import { Header } from "./components/header.js";
-import { tuiAgentModelId } from "./config.js";
+import { pasteCollapseLineThreshold, tuiAgentModelId } from "./config.js";
 import type {
   TUIOptions,
   TUIAgentUIMessagePart,
@@ -316,6 +316,7 @@ export function App({ options }: AppProps) {
           disabled={isStreaming}
           inputTokens={state.usage.inputTokens ?? 0}
           contextLimit={state.contextLimit}
+          pasteCollapseLineThreshold={pasteCollapseLineThreshold}
         />
       )}
     </Box>

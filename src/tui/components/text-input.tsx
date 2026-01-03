@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useLayoutEffect } from "react";
+import React, { useState, useRef, useCallback, useLayoutEffect, useEffect } from "react";
 import { Text, useInput } from "ink";
 import chalk from "chalk";
 
@@ -14,6 +14,9 @@ type TextInputProps = {
   onCtrlN?: () => boolean | void;
   onCtrlP?: () => boolean | void;
   onReturn?: () => boolean | void;
+  onPaste?: (value: string) => boolean | void;
+  isTokenChar?: (char: string) => boolean;
+  renderToken?: (token: string) => string;
   placeholder?: string;
   focus?: boolean;
   showCursor?: boolean;
@@ -52,6 +55,9 @@ export function TextInput({
   onCtrlN,
   onCtrlP,
   onReturn,
+  onPaste,
+  isTokenChar,
+  renderToken,
   placeholder = "",
   focus = true,
   showCursor = true
@@ -63,6 +69,8 @@ export function TextInput({
   // Refs to always have access to latest values in useInput callback
   const valueRef = useRef(internalValue);
   const cursorRef = useRef(cursorOffset);
+  const pasteBufferRef = useRef("");
+  const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep refs in sync with state
   valueRef.current = internalValue;
@@ -133,9 +141,82 @@ export function TextInput({
     [onCursorChange]
   );
 
+  const flushPasteBuffer = useCallback(() => {
+    const buffered = pasteBufferRef.current;
+    if (!buffered) return;
+
+    pasteBufferRef.current = "";
+    if (pasteTimerRef.current) {
+      clearTimeout(pasteTimerRef.current);
+      pasteTimerRef.current = null;
+    }
+
+    if (onPaste) {
+      const handled = onPaste(buffered);
+      if (handled) return;
+    }
+
+    const currentValue = valueRef.current;
+    const currentCursor = cursorRef.current;
+    const nextValue =
+      currentValue.slice(0, currentCursor) +
+      buffered +
+      currentValue.slice(currentCursor);
+    const nextCursor = currentCursor + buffered.length;
+    updateValue(nextValue, nextCursor);
+  }, [onPaste, updateValue]);
+
+  useEffect(() => {
+    return () => {
+      if (pasteTimerRef.current) {
+        clearTimeout(pasteTimerRef.current);
+      }
+    };
+  }, []);
+
   const value = internalValue;
   let renderedValue = value;
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
+  const tokenMatcher = isTokenChar ?? (() => false);
+  const tokenRenderer = renderToken ?? ((token: string) => token);
+
+  const buildRenderedValue = (withCursor: boolean): string => {
+    if (!withCursor) {
+      let result = "";
+      for (const char of value) {
+        result += tokenMatcher(char) ? tokenRenderer(char) : char;
+      }
+      return result;
+    }
+
+    if (value.length === 0) {
+      return chalk.inverse(" ");
+    }
+
+    let result = "";
+    let i = 0;
+    for (const char of value) {
+      const isCursor = i === cursorOffset;
+      if (tokenMatcher(char)) {
+        const tokenText = tokenRenderer(char);
+        if (isCursor) {
+          result += tokenText.length > 0
+            ? chalk.inverse(tokenText[0]) + tokenText.slice(1)
+            : chalk.inverse(" ");
+        } else {
+          result += tokenText;
+        }
+      } else {
+        result += isCursor ? chalk.inverse(char) : char;
+      }
+      i++;
+    }
+
+    if (cursorOffset === value.length) {
+      result += chalk.inverse(" ");
+    }
+    return result;
+  };
 
   // Fake mouse cursor
   if (showCursor && focus) {
@@ -143,19 +224,9 @@ export function TextInput({
       placeholder.length > 0
         ? chalk.inverse(placeholder[0]) + chalk.grey(placeholder.slice(1))
         : chalk.inverse(" ");
-
-    renderedValue = value.length > 0 ? "" : chalk.inverse(" ");
-
-    let i = 0;
-    for (const char of value) {
-      renderedValue +=
-        i === cursorOffset ? chalk.inverse(char) : char;
-      i++;
-    }
-
-    if (value.length > 0 && cursorOffset === value.length) {
-      renderedValue += chalk.inverse(" ");
-    }
+    renderedValue = buildRenderedValue(true);
+  } else {
+    renderedValue = buildRenderedValue(false);
   }
 
   useInput(
@@ -163,6 +234,21 @@ export function TextInput({
       // Always read from refs to get latest values
       const currentValue = valueRef.current;
       const currentCursor = cursorRef.current;
+
+      if (pasteBufferRef.current && input.length <= 1) {
+        flushPasteBuffer();
+      }
+
+      if (onPaste && input.length > 1) {
+        pasteBufferRef.current += input;
+        if (pasteTimerRef.current) {
+          clearTimeout(pasteTimerRef.current);
+        }
+        pasteTimerRef.current = setTimeout(() => {
+          flushPasteBuffer();
+        }, 10);
+        return;
+      }
 
       // Handle up arrow - let parent intercept if needed
       if (key.upArrow) {

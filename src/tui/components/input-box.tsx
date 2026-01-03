@@ -1,8 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { TextInput } from "./text-input.js";
 import { Suggestions, type Suggestion } from "./suggestions.js";
 import { getFileSuggestions, extractMention } from "../lib/file-suggestions.js";
+import {
+  countLines,
+  createPasteToken,
+  expandPasteTokens,
+  extractPasteTokens,
+  formatPastePlaceholder,
+  isPasteTokenChar,
+  type PasteBlock,
+} from "../lib/paste-blocks.js";
 import type { AutoAcceptMode } from "../types.js";
 
 type InputBoxProps = {
@@ -12,6 +21,7 @@ type InputBoxProps = {
   disabled?: boolean;
   inputTokens?: number;
   contextLimit?: number;
+  pasteCollapseLineThreshold?: number;
 };
 
 function getAutoAcceptLabel(mode: AutoAcceptMode): string {
@@ -86,6 +96,7 @@ export const InputBox = memo(function InputBox({
   disabled = false,
   inputTokens = 0,
   contextLimit = 0,
+  pasteCollapseLineThreshold = 5,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -95,8 +106,10 @@ export const InputBox = memo(function InputBox({
     mentionStart: number;
     partialPath: string;
   } | null>(null);
+  const [pasteBlocks, setPasteBlocks] = useState<PasteBlock[]>([]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextPasteIdRef = useRef(1);
 
   useInput((input, key) => {
     // Shift+Tab to cycle auto-accept modes
@@ -140,13 +153,53 @@ export const InputBox = memo(function InputBox({
     };
   }, [value, cursorPosition]);
 
-  const handleValueChange = useCallback((newValue: string) => {
+  const pasteBlocksByToken = useMemo(() => {
+    return new Map(pasteBlocks.map((block) => [block.token, block]));
+  }, [pasteBlocks]);
+
+  const updateValue = useCallback((newValue: string) => {
     setValue(newValue);
+    const tokens = extractPasteTokens(newValue);
+    setPasteBlocks((prev) => prev.filter((block) => tokens.has(block.token)));
   }, []);
+
+  const handleValueChange = useCallback((newValue: string) => {
+    updateValue(newValue);
+  }, [updateValue]);
 
   const handleCursorChange = useCallback((position: number) => {
     setCursorPosition(position);
   }, []);
+
+  const handlePaste = useCallback(
+    (text: string) => {
+      const lineCount = countLines(text);
+      if (lineCount <= 1 || lineCount < pasteCollapseLineThreshold) {
+        return false;
+      }
+
+      const id = nextPasteIdRef.current;
+      const token = createPasteToken(id);
+      nextPasteIdRef.current += 1;
+
+      const newValue =
+        value.slice(0, cursorPosition) + token + value.slice(cursorPosition);
+      updateValue(newValue);
+      setCursorPosition(cursorPosition + 1);
+      setPasteBlocks((prev) => [...prev, { id, token, text, lineCount }]);
+      return true;
+    },
+    [cursorPosition, pasteCollapseLineThreshold, updateValue, value]
+  );
+
+  const renderPasteToken = useCallback(
+    (token: string) => {
+      const block = pasteBlocksByToken.get(token);
+      if (!block) return "[Pasted text]";
+      return formatPastePlaceholder(block.id, block.lineCount);
+    },
+    [pasteBlocksByToken]
+  );
 
   const handleUpArrow = useCallback(() => {
     if (suggestions.length > 0) {
@@ -196,7 +249,7 @@ export const InputBox = memo(function InputBox({
         const before = value.slice(0, mentionInfo.mentionStart + 1); // Include @
         const after = value.slice(cursorPosition);
         const newValue = before + selected.value + " " + after;
-        setValue(newValue);
+        updateValue(newValue);
         // Update cursor position to after the space
         const newCursorPos = mentionInfo.mentionStart + 1 + selected.value.length + 1;
         setCursorPosition(newCursorPos);
@@ -207,7 +260,7 @@ export const InputBox = memo(function InputBox({
       }
     }
     return false;
-  }, [suggestions, selectedIndex, mentionInfo, value, cursorPosition]);
+  }, [suggestions, selectedIndex, mentionInfo, value, cursorPosition, updateValue]);
 
   const handleTab = useCallback(() => {
     return selectSuggestion();
@@ -219,15 +272,17 @@ export const InputBox = memo(function InputBox({
 
   const handleSubmit = useCallback(
     (submitValue: string) => {
-      if (submitValue.trim() && !disabled) {
-        onSubmit(submitValue.trim());
-        setValue("");
+      const expandedValue = expandPasteTokens(submitValue, pasteBlocksByToken);
+      const trimmedValue = expandedValue.trim();
+      if (trimmedValue && !disabled) {
+        onSubmit(trimmedValue);
+        updateValue("");
         setCursorPosition(0);
         setSuggestions([]);
         setMentionInfo(null);
       }
     },
-    [disabled, onSubmit]
+    [disabled, onSubmit, pasteBlocksByToken, updateValue]
   );
 
   return (
@@ -255,6 +310,9 @@ export const InputBox = memo(function InputBox({
             onCtrlN={handleCtrlN}
             onCtrlP={handleCtrlP}
             onReturn={handleReturn}
+            onPaste={handlePaste}
+            isTokenChar={isPasteTokenChar}
+            renderToken={renderPasteToken}
             placeholder=""
           />
         )}
