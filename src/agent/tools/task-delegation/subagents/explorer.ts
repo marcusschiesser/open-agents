@@ -4,6 +4,7 @@ import { readFileTool } from "../../file-system/read";
 import { grepTool } from "../../file-system/grep";
 import { globTool } from "../../file-system/glob";
 import { bashTool, commandNeedsApproval } from "../../file-system/bash";
+import type { Sandbox } from "../../../sandbox";
 
 const EXPLORER_SYSTEM_PROMPT = `You are an explorer agent - a fast, read-only subagent specialized for exploring codebases.
 
@@ -55,8 +56,8 @@ You have access to: read, grep, glob, bash (read-only commands only)
 
 const callOptionsSchema = z.object({
   task: z.string().describe("Short description of the exploration task"),
-  cwd: z.string().describe("Working directory for the subagent"),
   instructions: z.string().describe("Detailed instructions for the exploration"),
+  sandbox: z.custom<Sandbox>().describe("Sandbox for file system and shell operations"),
 });
 
 export type ExplorerCallOptions = z.infer<typeof callOptionsSchema>;
@@ -76,11 +77,13 @@ export const explorerSubagent = new ToolLoopAgent({
   },
   stopWhen: stepCountIs(30),
   callOptionsSchema,
-  prepareCall: ({ options, ...settings }) => ({
-    ...settings,
-    instructions: `${EXPLORER_SYSTEM_PROMPT}
+  prepareCall: ({ options, ...settings }) => {
+    const sandbox = options.sandbox;
+    return {
+      ...settings,
+      instructions: `${EXPLORER_SYSTEM_PROMPT}
 
-Working directory: ${options.cwd}
+Working directory: ${sandbox.workingDirectory}
 
 ## Your Task
 ${options.task}
@@ -92,5 +95,7 @@ ${options.instructions}
 - You CANNOT ask questions - no one will respond
 - This is READ-ONLY - do NOT create, modify, or delete any files
 - Your final message MUST include both a **Summary** of what you searched AND the **Answer** to the task`,
-  }),
+      experimental_context: { sandbox },
+    };
+  },
 });

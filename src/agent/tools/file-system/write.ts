@@ -1,14 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import * as fs from "fs/promises";
 import * as path from "path";
-import type { AgentContext } from "../../types";
-
-function isPathWithinDirectory(filePath: string, directory: string): boolean {
-  const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(directory);
-  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
-}
+import { isPathWithinDirectory, getSandbox } from "../../utils";
 
 const writeInputSchema = z.object({
   filePath: z.string().describe("Absolute path to the file to write"),
@@ -72,8 +65,8 @@ EXAMPLES:
 - Replace a script after reading it: filePath: "/Users/username/project/scripts/build.sh", content: "<entire updated script>"`,
   inputSchema: writeInputSchema,
   execute: async ({ filePath, content }, { experimental_context }) => {
-    const context = experimental_context as AgentContext;
-    const workingDirectory = context?.workingDirectory ?? process.cwd();
+    const sandbox = getSandbox(experimental_context);
+    const workingDirectory = sandbox.workingDirectory;
 
     try {
       const absolutePath = path.isAbsolute(filePath)
@@ -89,10 +82,10 @@ EXAMPLES:
       }
 
       const dir = path.dirname(absolutePath);
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(absolutePath, content, "utf-8");
+      await sandbox.mkdir(dir, { recursive: true });
+      await sandbox.writeFile(absolutePath, content, "utf-8");
 
-      const stats = await fs.stat(absolutePath);
+      const stats = await sandbox.stat(absolutePath);
 
       return {
         success: true,
@@ -140,8 +133,8 @@ EXAMPLES:
 - Rename a variable throughout a file: filePath: "/Users/username/project/src/api.ts", oldString: "oldApiClient", newString: "newApiClient", replaceAll: true`,
   inputSchema: editInputSchema,
   execute: async ({ filePath, oldString, newString, replaceAll = false }, { experimental_context }) => {
-    const context = experimental_context as AgentContext;
-    const workingDirectory = context?.workingDirectory ?? process.cwd();
+    const sandbox = getSandbox(experimental_context);
+    const workingDirectory = sandbox.workingDirectory;
 
     try {
       if (oldString === newString) {
@@ -163,7 +156,7 @@ EXAMPLES:
         };
       }
 
-      const content = await fs.readFile(absolutePath, "utf-8");
+      const content = await sandbox.readFile(absolutePath, "utf-8");
 
       if (!content.includes(oldString)) {
         return {
@@ -185,7 +178,7 @@ EXAMPLES:
         ? content.replaceAll(oldString, newString)
         : content.replace(oldString, newString);
 
-      await fs.writeFile(absolutePath, newContent, "utf-8");
+      await sandbox.writeFile(absolutePath, newContent, "utf-8");
 
       return {
         success: true,

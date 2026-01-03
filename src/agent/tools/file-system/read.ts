@@ -1,14 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import * as fs from "fs/promises";
 import * as path from "path";
-import type { AgentContext } from "../../types";
-
-function isPathWithinDirectory(filePath: string, directory: string): boolean {
-  const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(directory);
-  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
-}
+import { isPathWithinDirectory, getSandbox } from "../../utils";
 
 export const readFileTool = tool({
   description: `Read a file from the filesystem.
@@ -46,8 +39,8 @@ EXAMPLES:
       .describe("Maximum number of lines to read. Default: 2000"),
   }),
   execute: async ({ filePath, offset = 1, limit = 2000 }, { experimental_context }) => {
-    const context = experimental_context as AgentContext;
-    const workingDirectory = context?.workingDirectory ?? process.cwd();
+    const sandbox = getSandbox(experimental_context);
+    const workingDirectory = sandbox.workingDirectory;
 
     try {
       if (filePath.startsWith("/scratchpad/")) {
@@ -69,7 +62,7 @@ EXAMPLES:
       // If the path doesn't exist and looks like a root-relative path (e.g., /README.md),
       // try resolving it relative to the working directory
       try {
-        await fs.access(absolutePath);
+        await sandbox.access(absolutePath);
       } catch {
         // Path doesn't exist - check if it's a root-relative path that should be workspace-relative
         if (
@@ -79,7 +72,7 @@ EXAMPLES:
         ) {
           const workspaceRelativePath = path.join(workingDirectory, filePath);
           try {
-            await fs.access(workspaceRelativePath);
+            await sandbox.access(workspaceRelativePath);
             absolutePath = workspaceRelativePath;
           } catch {
             // Neither path exists - let it fall through to the original error handling
@@ -95,7 +88,7 @@ EXAMPLES:
         };
       }
 
-      const stats = await fs.stat(absolutePath);
+      const stats = await sandbox.stat(absolutePath);
       if (stats.isDirectory()) {
         return {
           success: false,
@@ -103,7 +96,7 @@ EXAMPLES:
         };
       }
 
-      const content = await fs.readFile(absolutePath, "utf-8");
+      const content = await sandbox.readFile(absolutePath, "utf-8");
       const lines = content.split("\n");
       const startLine = Math.max(1, offset) - 1;
       const endLine = Math.min(lines.length, startLine + limit);

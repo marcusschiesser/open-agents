@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { addMemoryEntry } from "../../state/memory-store";
-import type { AgentContext } from "../../types";
+import { getSandbox } from "../../utils";
 
 export const memorySaveTool = tool({
   description: `Save information to long-term memory for recall in future conversations (per workspace/project).
@@ -42,8 +42,8 @@ EXAMPLES:
   }),
   execute: async ({ content, tags, metadata }, { experimental_context }) => {
     try {
-      const context = experimental_context as AgentContext;
-      const workingDirectory = context.workingDirectory ?? process.cwd();
+      const sandbox = getSandbox(experimental_context);
+      const workingDirectory = sandbox.workingDirectory;
 
       const entry = await addMemoryEntry(workingDirectory, {
         content,

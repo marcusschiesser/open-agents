@@ -1,83 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { spawn } from "child_process";
 import * as path from "path";
-import type { AgentContext } from "../../types";
-
-function isPathWithinDirectory(filePath: string, directory: string): boolean {
-  const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(directory);
-  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
-}
+import { isPathWithinDirectory, getSandbox } from "../../utils";
 
 const TIMEOUT_MS = 120_000;
-const MAX_OUTPUT_LENGTH = 50_000;
-
-interface BashResult {
-  success: boolean;
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  truncated: boolean;
-}
-
-async function executeCommand(
-  command: string,
-  cwd: string,
-  timeoutMs: number
-): Promise<BashResult> {
-  return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", command], {
-      cwd,
-      env: { ...process.env },
-      timeout: timeoutMs,
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let truncated = false;
-
-    child.stdout.on("data", (data) => {
-      const chunk = data.toString();
-      if (stdout.length + chunk.length > MAX_OUTPUT_LENGTH) {
-        stdout += chunk.slice(0, MAX_OUTPUT_LENGTH - stdout.length);
-        truncated = true;
-      } else {
-        stdout += chunk;
-      }
-    });
-
-    child.stderr.on("data", (data) => {
-      const chunk = data.toString();
-      if (stderr.length + chunk.length > MAX_OUTPUT_LENGTH) {
-        stderr += chunk.slice(0, MAX_OUTPUT_LENGTH - stderr.length);
-        truncated = true;
-      } else {
-        stderr += chunk;
-      }
-    });
-
-    child.on("close", (code) => {
-      resolve({
-        success: code === 0,
-        exitCode: code,
-        stdout,
-        stderr,
-        truncated,
-      });
-    });
-
-    child.on("error", (error) => {
-      resolve({
-        success: false,
-        exitCode: null,
-        stdout,
-        stderr: error.message,
-        truncated,
-      });
-    });
-  });
-}
 
 const bashInputSchema = z.object({
   command: z.string().describe("The bash command to execute"),
@@ -205,8 +131,8 @@ EXAMPLES:
 - List files in src: command: "ls -la", cwd: "/Users/username/project/src"`,
   inputSchema: bashInputSchema,
   execute: async ({ command, cwd }, { experimental_context }) => {
-    const context = experimental_context as AgentContext;
-    const workingDirectory = context?.workingDirectory ?? process.cwd();
+    const sandbox = getSandbox(experimental_context);
+    const workingDirectory = sandbox.workingDirectory;
 
     // Resolve the working directory
     const workingDir = cwd
@@ -223,7 +149,7 @@ EXAMPLES:
       };
     }
 
-    const result = await executeCommand(command, workingDir, TIMEOUT_MS);
+    const result = await sandbox.exec(command, workingDir, TIMEOUT_MS);
 
     return {
       success: result.success,

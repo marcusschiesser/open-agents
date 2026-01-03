@@ -21,6 +21,7 @@ import type { TodoItem, ScratchpadEntry } from "./types";
 import { todoItemSchema } from "./types";
 import { addCacheControl, compactContext } from "./utils";
 import { gateway } from "../models";
+import { createLocalSandbox, type Sandbox } from "./sandbox";
 
 const callOptionsSchema = z.object({
   workingDirectory: z.string(),
@@ -38,6 +39,7 @@ const callOptionsSchema = z.object({
       }),
     )
     .optional(),
+  sandbox: z.custom<Sandbox>().optional(),
 });
 
 export type DeepAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -81,6 +83,10 @@ export const deepAgent = new ToolLoopAgent({
     const scratchpad =
       options?.scratchpad ?? new Map<string, ScratchpadEntry>();
 
+    // Use provided sandbox, or create a local sandbox with the working directory
+    const sandbox =
+      options?.sandbox ?? createLocalSandbox(workingDirectory);
+
     const todosContext = formatTodosForContext(todos);
     const scratchpadContext = formatScratchpadForContext(scratchpad);
 
@@ -88,12 +94,12 @@ export const deepAgent = new ToolLoopAgent({
       ...settings,
       model,
       instructions: buildSystemPrompt({
-        cwd: workingDirectory,
+        cwd: sandbox.workingDirectory,
         customInstructions,
         todosContext,
         scratchpadContext,
       }),
-      experimental_context: { workingDirectory },
+      experimental_context: { sandbox },
     };
   },
 });

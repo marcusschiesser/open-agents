@@ -1,14 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import * as fs from "fs/promises";
 import * as path from "path";
-import type { AgentContext } from "../../types";
-
-function isPathWithinDirectory(filePath: string, directory: string): boolean {
-  const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(directory);
-  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
-}
+import type { Sandbox } from "../../sandbox";
+import { isPathWithinDirectory, getSandbox } from "../../utils";
 
 interface FileInfo {
   path: string;
@@ -20,7 +14,8 @@ interface FileInfo {
 async function findFiles(
   baseDir: string,
   pattern: string,
-  limit: number
+  limit: number,
+  sandbox: Sandbox
 ): Promise<FileInfo[]> {
   const results: FileInfo[] = [];
 
@@ -51,7 +46,7 @@ async function findFiles(
     if (results.length >= limit) return;
 
     try {
-      const entries = await fs.readdir(currentDir, { withFileTypes: true });
+      const entries = await sandbox.readdir(currentDir, { withFileTypes: true });
 
       for (const entry of entries) {
         if (results.length >= limit) break;
@@ -70,7 +65,7 @@ async function findFiles(
           const matches = await matchesPattern(fullPath, entry.name);
           if (matches) {
             try {
-              const stats = await fs.stat(fullPath);
+              const stats = await sandbox.stat(fullPath);
               results.push({
                 path: fullPath,
                 isDirectory: false,
@@ -136,8 +131,8 @@ EXAMPLES:
       .describe("Maximum number of results. Default: 100"),
   }),
   execute: async ({ pattern, path: basePath, limit = 100 }, { experimental_context }) => {
-    const context = experimental_context as AgentContext;
-    const workingDirectory = context?.workingDirectory ?? process.cwd();
+    const sandbox = getSandbox(experimental_context);
+    const workingDirectory = sandbox.workingDirectory;
 
     try {
       // Resolve search directory relative to working directory
@@ -158,7 +153,7 @@ EXAMPLES:
         };
       }
 
-      const files = await findFiles(searchDir, pattern, limit);
+      const files = await findFiles(searchDir, pattern, limit, sandbox);
 
       return {
         success: true,

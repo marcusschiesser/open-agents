@@ -5,6 +5,7 @@ import { writeFileTool, editFileTool } from "../../file-system/write";
 import { grepTool } from "../../file-system/grep";
 import { globTool } from "../../file-system/glob";
 import { bashTool, commandNeedsApproval } from "../../file-system/bash";
+import type { Sandbox } from "../../../sandbox";
 
 const EXECUTOR_SYSTEM_PROMPT = `You are an executor agent - a fire-and-forget subagent that completes specific, well-defined implementation tasks autonomously.
 
@@ -44,8 +45,8 @@ You have full access to file operations (read, write, edit, grep, glob) and bash
 
 const callOptionsSchema = z.object({
   task: z.string().describe("Short description of the task"),
-  cwd: z.string().describe("Working directory for the subagent"),
   instructions: z.string().describe("Detailed instructions for the task"),
+  sandbox: z.custom<Sandbox>().describe("Sandbox for file system and shell operations"),
 });
 
 export type ExecutorCallOptions = z.infer<typeof callOptionsSchema>;
@@ -67,11 +68,13 @@ export const executorSubagent = new ToolLoopAgent({
   },
   stopWhen: stepCountIs(30),
   callOptionsSchema,
-  prepareCall: ({ options, ...settings }) => ({
-    ...settings,
-    instructions: `${EXECUTOR_SYSTEM_PROMPT}
+  prepareCall: ({ options, ...settings }) => {
+    const sandbox = options.sandbox;
+    return {
+      ...settings,
+      instructions: `${EXECUTOR_SYSTEM_PROMPT}
 
-Working directory: ${options.cwd}
+Working directory: ${sandbox.workingDirectory}
 
 ## Your Task
 ${options.task}
@@ -83,5 +86,7 @@ ${options.instructions}
 - You CANNOT ask questions - no one will respond
 - Complete the task fully before returning
 - Your final message MUST include both a **Summary** of what you did AND the **Answer** to the task`,
-  }),
+      experimental_context: { sandbox },
+    };
+  },
 });

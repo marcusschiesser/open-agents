@@ -2,6 +2,7 @@ import { tool, readUIMessageStream } from "ai";
 import { z } from "zod";
 import { explorerSubagent } from "./subagents/explorer";
 import { executorSubagent } from "./subagents/executor";
+import { getSandbox } from "../../utils";
 
 const subagentTypeSchema = z.enum(["explorer", "executor"]);
 
@@ -19,10 +20,6 @@ const taskInputSchema = z.object({
 - Constraints and patterns to follow
 - How to verify the work`
   ),
-  workingDirectory: z
-    .string()
-    .optional()
-    .describe("Working directory for the subagent"),
 });
 
 export const taskTool = tool({
@@ -70,7 +67,6 @@ HOW TO USE:
 - Choose the appropriate subagentType based on whether you need read-only or write access
 - Provide a short task string (for display) summarizing the goal
 - Provide detailed instructions including goals, steps, constraints, and verification criteria
-- Optionally set workingDirectory to scope the subagent's operations
 
 IMPORTANT:
 - Be explicit and concrete - subagents cannot ask clarifying questions
@@ -79,14 +75,14 @@ IMPORTANT:
 
 NOTE: The executor subagent requires user approval before running because it has full write access.`,
   inputSchema: taskInputSchema,
-  execute: async function* ({ subagentType, task, instructions, workingDirectory }) {
-    const cwd = workingDirectory ?? process.cwd();
+  execute: async function* ({ subagentType, task, instructions }, { experimental_context }) {
+    const sandbox = getSandbox(experimental_context);
 
     const subagent = subagentType === "explorer" ? explorerSubagent : executorSubagent;
 
     const result = await subagent.stream({
       prompt: "Complete this task and provide a summary of what you accomplished.",
-      options: { task, cwd, instructions },
+      options: { task, instructions, sandbox },
     });
 
     for await (const message of readUIMessageStream({
