@@ -9,6 +9,8 @@ import type {
 
 const MAX_OUTPUT_LENGTH = 50_000;
 const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
+const TIMEOUT_BUFFER_MS = 30_000; // 30 seconds buffer for beforeStop hook
+const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // 5 minutes default timeout for reconnected sandboxes
 
 export interface VercelSandboxConfig {
   /**
@@ -89,7 +91,29 @@ export class VercelSandbox implements Sandbox {
    */
   readonly currentBranch?: string;
   readonly hooks?: SandboxHooks;
+
   private sdk: VercelSandboxSDK;
+  private timeoutTimer?: ReturnType<typeof setTimeout>;
+  private isStopped = false;
+  private _expiresAt?: number;
+  private _timeout?: number;
+
+  /**
+   * Timestamp (ms since epoch) when this sandbox will be proactively stopped.
+   * This value is updated when timeout is extended via extendTimeout().
+   */
+  get expiresAt(): number | undefined {
+    return this._expiresAt;
+  }
+
+  /**
+   * The initial configured proactive timeout duration in milliseconds.
+   * Note: This is the original timeout value, not affected by extendTimeout() calls.
+   * Use expiresAt to get the current expiration time.
+   */
+  get timeout(): number | undefined {
+    return this._timeout;
+  }
 
   private constructor(
     sdk: VercelSandboxSDK,
@@ -98,6 +122,8 @@ export class VercelSandbox implements Sandbox {
     env?: Record<string, string>,
     currentBranch?: string,
     hooks?: SandboxHooks,
+    timeout?: number,
+    startTime?: number,
   ) {
     this.sdk = sdk;
     this.id = id;
@@ -105,6 +131,107 @@ export class VercelSandbox implements Sandbox {
     this.env = env;
     this.currentBranch = currentBranch;
     this.hooks = hooks;
+
+    // Set timeout tracking for proactive stop
+    if (timeout !== undefined && startTime !== undefined) {
+      this._timeout = timeout;
+      this._expiresAt = startTime + timeout;
+      this.scheduleProactiveStop();
+    }
+  }
+
+  /**
+   * Schedule a timer to proactively call stop() before the SDK timeout.
+   * This ensures beforeStop hook has time to run.
+   */
+  private scheduleProactiveStop(): void {
+    if (this._expiresAt === undefined) return;
+
+    const msUntilTimeout = this._expiresAt - Date.now();
+    if (msUntilTimeout <= 0) return;
+
+    this.timeoutTimer = setTimeout(async () => {
+      try {
+        if (this.isStopped) return;
+
+        // Call onTimeout hook first
+        if (this.hooks?.onTimeout) {
+          try {
+            await this.hooks.onTimeout(this);
+          } catch (error) {
+            console.error(
+              "[VercelSandbox] onTimeout hook failed:",
+              error instanceof Error ? error.message : error,
+            );
+          }
+        }
+
+        await this.stop();
+      } catch (error) {
+        // Sandbox may already be stopped by SDK
+        console.warn(
+          "[VercelSandbox] Proactive stop failed (sandbox may already be stopped):",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }, msUntilTimeout);
+  }
+
+  /**
+   * Clear existing timeout timer and schedule a new one.
+   */
+  private rescheduleProactiveStop(): void {
+    // Clear existing timer
+    if (this.timeoutTimer) {
+      clearTimeout(this.timeoutTimer);
+      this.timeoutTimer = undefined;
+    }
+    // Schedule new timer
+    this.scheduleProactiveStop();
+  }
+
+  /**
+   * Extend the sandbox timeout by the specified duration.
+   * @param additionalMs - Additional time in milliseconds
+   * @returns New expiration timestamp
+   */
+  async extendTimeout(additionalMs: number): Promise<{ expiresAt: number }> {
+    if (this.isStopped) {
+      throw new Error("Cannot extend timeout on stopped sandbox");
+    }
+    if (this._expiresAt === undefined) {
+      throw new Error("Timeout tracking not enabled for this sandbox");
+    }
+
+    // Check if SDK supports extendTimeout
+    if (typeof this.sdk.extendTimeout !== "function") {
+      throw new Error(
+        "extendTimeout is not supported by this version of @vercel/sandbox",
+      );
+    }
+
+    // Call Vercel SDK to extend
+    await this.sdk.extendTimeout(additionalMs);
+
+    // Update internal state
+    this._expiresAt += additionalMs;
+
+    // Reschedule proactive stop timer
+    this.rescheduleProactiveStop();
+
+    // Call hook if provided
+    if (this.hooks?.onTimeoutExtended) {
+      try {
+        await this.hooks.onTimeoutExtended(this, additionalMs);
+      } catch (error) {
+        console.error(
+          "[VercelSandbox] onTimeoutExtended hook failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    return { expiresAt: this._expiresAt };
   }
 
   /**
@@ -167,10 +294,13 @@ export class VercelSandbox implements Sandbox {
           }
       : undefined;
 
+    // Calculate SDK timeout with buffer for beforeStop hook
+    const sdkTimeout = timeout + TIMEOUT_BUFFER_MS;
+
     const sdk = await VercelSandboxSDK.create({
       ...(sourceConfig && { source: sourceConfig }),
       resources: { vcpus },
-      timeout,
+      timeout: sdkTimeout,
       runtime,
       ...(ports && { ports }),
     });
@@ -252,6 +382,9 @@ export class VercelSandbox implements Sandbox {
       currentBranch = source.branch;
     }
 
+    // Capture startTime AFTER all setup operations so users get their full timeout duration
+    const startTime = Date.now();
+
     const sandbox = new VercelSandbox(
       sdk,
       sdk.sandboxId,
@@ -259,6 +392,8 @@ export class VercelSandbox implements Sandbox {
       env,
       currentBranch,
       hooks,
+      timeout,
+      startTime,
     );
 
     // Call afterStart hook if provided
@@ -274,9 +409,25 @@ export class VercelSandbox implements Sandbox {
    */
   static async connect(
     sandboxId: string,
-    options: { env?: Record<string, string>; hooks?: SandboxHooks } = {},
+    options: {
+      env?: Record<string, string>;
+      hooks?: SandboxHooks;
+      /**
+       * Remaining timeout in ms for this sandbox.
+       * If not provided, defaults to DEFAULT_RECONNECT_TIMEOUT_MS (5 minutes).
+       * This ensures timeout tracking and proactive stop work correctly.
+       */
+      remainingTimeout?: number;
+    } = {},
   ): Promise<VercelSandbox> {
     const sdk = await VercelSandboxSDK.get({ sandboxId });
+
+    // Use provided remainingTimeout or default to DEFAULT_RECONNECT_TIMEOUT_MS
+    // This ensures timeout tracking is always enabled for reconnected sandboxes,
+    // allowing beforeStop and onTimeout hooks to fire properly.
+    const remainingTimeout =
+      options.remainingTimeout ?? DEFAULT_RECONNECT_TIMEOUT_MS;
+    const startTime = Date.now();
 
     const sandbox = new VercelSandbox(
       sdk,
@@ -285,6 +436,8 @@ export class VercelSandbox implements Sandbox {
       options.env,
       undefined,
       options.hooks,
+      remainingTimeout,
+      startTime,
     );
 
     // Call afterStart hook if provided (useful for reconnection setup)
@@ -494,11 +647,31 @@ export class VercelSandbox implements Sandbox {
   /**
    * Stop and clean up the sandbox.
    * Calls beforeStop hook if provided before stopping the sandbox.
+   * This method is idempotent - calling it multiple times is safe.
    */
   async stop(): Promise<void> {
-    if (this.hooks?.beforeStop) {
-      await this.hooks.beforeStop(this);
+    // Ensure stop() only runs once
+    if (this.isStopped) return;
+    this.isStopped = true;
+
+    // Clear proactive timeout timer
+    if (this.timeoutTimer) {
+      clearTimeout(this.timeoutTimer);
+      this.timeoutTimer = undefined;
     }
+
+    // Run beforeStop hook
+    if (this.hooks?.beforeStop) {
+      try {
+        await this.hooks.beforeStop(this);
+      } catch (error) {
+        console.error(
+          "[VercelSandbox] beforeStop hook failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     await this.sdk.stop();
   }
 }
@@ -513,6 +686,13 @@ export interface VercelSandboxConnectConfig {
   env?: Record<string, string>;
   /** Lifecycle hooks for setup and teardown */
   hooks?: SandboxHooks;
+  /**
+   * Remaining timeout in milliseconds for this sandbox.
+   * If not provided, defaults to 5 minutes (DEFAULT_RECONNECT_TIMEOUT_MS).
+   * This ensures proactive stop and hooks (beforeStop, onTimeout) work correctly.
+   * Provide an explicit value if you know the exact remaining time.
+   */
+  remainingTimeout?: number;
 }
 
 /**
@@ -571,6 +751,7 @@ export async function connectVercelSandbox(
     return VercelSandbox.connect(config.sandboxId, {
       env: config.env,
       hooks: config.hooks,
+      remainingTimeout: config.remainingTimeout,
     });
   }
   return VercelSandbox.create(config);

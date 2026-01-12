@@ -34,6 +34,25 @@ export interface SandboxHooks {
    * }
    */
   beforeStop?: SandboxHook;
+
+  /**
+   * Called when the sandbox is about to timeout (before beforeStop).
+   * Use to differentiate timeout-triggered stops from manual stops.
+   * This hook fires first, then beforeStop runs as part of the stop() call.
+   *
+   * @example
+   * onTimeout: async (sandbox) => {
+   *   console.log("Sandbox timed out, saving work...");
+   * }
+   */
+  onTimeout?: SandboxHook;
+
+  /**
+   * Called after timeout is successfully extended.
+   * @param sandbox - The sandbox instance
+   * @param additionalMs - How much time was added
+   */
+  onTimeoutExtended?: (sandbox: Sandbox, additionalMs: number) => Promise<void>;
 }
 
 /**
@@ -120,6 +139,23 @@ export interface Sandbox {
   readonly host?: string;
 
   /**
+   * Timestamp (ms since epoch) when this sandbox will be proactively stopped.
+   * For remote sandboxes, this is when the sandbox will call stop() before SDK timeout.
+   * This value is updated when timeout is extended via extendTimeout().
+   * For local sandboxes, this is undefined (no timeout).
+   */
+  readonly expiresAt?: number;
+
+  /**
+   * The initial configured proactive timeout duration in milliseconds.
+   * For remote sandboxes, this is the original time until proactive stop (SDK timeout - buffer).
+   * Note: This is the original timeout value, not affected by extendTimeout() calls.
+   * Use expiresAt to get the current expiration time.
+   * For local sandboxes, this is undefined (no timeout).
+   */
+  readonly timeout?: number;
+
+  /**
    * Read file contents as UTF-8 string
    */
   readFile(path: string, encoding: "utf-8"): Promise<string>;
@@ -163,4 +199,12 @@ export interface Sandbox {
    * For remote sandboxes, this releases resources.
    */
   stop(): Promise<void>;
+
+  /**
+   * Extend the sandbox timeout by the specified duration.
+   * Only supported by remote sandboxes (Vercel). Local sandboxes don't timeout.
+   * @param additionalMs - Additional time in milliseconds
+   * @returns New expiration timestamp
+   */
+  extendTimeout?(additionalMs: number): Promise<{ expiresAt: number }>;
 }
