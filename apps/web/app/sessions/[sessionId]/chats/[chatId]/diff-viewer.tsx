@@ -264,7 +264,7 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton
-        className="flex h-[90vh] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[calc(100vw-4rem)]"
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[90vh] sm:max-w-[calc(100vw-4rem)] sm:rounded-lg sm:border"
       >
         <DialogHeader className="shrink-0 border-b border-border px-4 py-3">
           <div className="flex items-center justify-between pr-8">
@@ -329,7 +329,7 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
                     variant="ghost"
                     size="sm"
                     onClick={expandAll}
-                    className="h-7 px-2 text-xs"
+                    className="hidden h-7 px-2 text-xs sm:inline-flex"
                   >
                     Expand all
                   </Button>
@@ -337,7 +337,7 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
                     variant="ghost"
                     size="sm"
                     onClick={collapseAll}
-                    className="h-7 px-2 text-xs"
+                    className="hidden h-7 px-2 text-xs sm:inline-flex"
                   >
                     Collapse
                   </Button>
