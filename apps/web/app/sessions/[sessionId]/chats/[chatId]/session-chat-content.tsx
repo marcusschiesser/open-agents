@@ -43,6 +43,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { Streamdown } from "streamdown";
 import useSWR from "swr";
 import type { ChatRefreshResponse } from "@/app/api/sessions/[sessionId]/chats/[chatId]/route";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
@@ -161,10 +162,6 @@ const ClosePrDialog = dynamic(
 const CreateRepoDialog = dynamic(
   () =>
     import("@/components/create-repo-dialog").then((m) => m.CreateRepoDialog),
-  { ssr: false },
-);
-const Streamdown = dynamic(
-  () => import("streamdown").then((m) => m.Streamdown),
   { ssr: false },
 );
 const DiffTabView = dynamic(

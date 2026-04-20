@@ -1,0 +1,14 @@
+FROM node:22-bullseye
+
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV BUN_INSTALL=/root/.bun
+ENV PATH=/root/.bun/bin:${PATH}
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL https://bun.sh/install | bash
+
+CMD ["sh", "-lc", "cat <<EOF > apps/web/.env\nPOSTGRES_URL=${POSTGRES_URL}\nJWE_SECRET=${JWE_SECRET}\nENCRYPTION_KEY=${ENCRYPTION_KEY}\nEOF\n/root/.bun/bin/bun install && /root/.bun/bin/bun run --cwd apps/web lib/db/migrate.ts && cd apps/web && /root/.bun/bin/bun run next dev --webpack --hostname 0.0.0.0"]

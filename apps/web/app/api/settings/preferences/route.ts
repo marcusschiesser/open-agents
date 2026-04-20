@@ -1,6 +1,8 @@
 import { getServerSession } from "@/lib/session/get-server-session";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import {
   getUserPreferences,
+  toUserPreferencesData,
   type DiffMode,
   updateUserPreferences,
 } from "@/lib/db/user-preferences";
@@ -31,6 +33,16 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  if (!hasDatabaseConfig()) {
+    return Response.json({
+      preferences: sanitizeUserPreferencesForSession(
+        toUserPreferencesData(),
+        session,
+        req.url,
+      ),
+    });
+  }
+
   const preferences = sanitizeUserPreferencesForSession(
     await getUserPreferences(session.user.id),
     session,
@@ -43,6 +55,13 @@ export async function PATCH(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (!hasDatabaseConfig()) {
+    return Response.json(
+      { error: "Preferences persistence requires POSTGRES_URL" },
+      { status: 503 },
+    );
   }
 
   let body: UpdatePreferencesRequest;

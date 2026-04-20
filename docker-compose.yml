@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: open_agents
+      POSTGRES_USER: open_agents
+      POSTGRES_PASSWORD: open_agents
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_agents -d open_agents"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: postgres://open_agents:open_agents@postgres:5432/open_agents
+      JWE_SECRET: 0123456789abcdefghijklmnopqrstuv
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      WATCHPACK_POLLING: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3000:3000"
+    working_dir: /app
+    volumes:
+      - .:/app
+      - bun-install-cache:/root/.bun/install/cache
+      - root-node-modules:/app/node_modules
+      - web-node-modules:/app/apps/web/node_modules
+
+volumes:
+  postgres-data:
+  bun-install-cache:
+  root-node-modules:
+  web-node-modules:

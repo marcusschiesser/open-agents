@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import type { Session } from "./types";
 import { SESSION_COOKIE_NAME } from "./constants";
 import { decryptJWE } from "@/lib/jwe/decrypt";
+import { getLocalFallbackSession } from "./local-fallback-session";
 
 export async function getSessionFromCookie(
   cookieValue?: string,
@@ -16,6 +17,8 @@ export async function getSessionFromCookie(
       };
     }
   }
+
+  return getLocalFallbackSession();
 }
 
 export async function getSessionFromReq(
