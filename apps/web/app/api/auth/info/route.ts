@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { hasDatabaseConfig } from "@/lib/db/client";
 import { getGitHubAccount } from "@/lib/db/accounts";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import { userExists } from "@/lib/db/users";
 import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
