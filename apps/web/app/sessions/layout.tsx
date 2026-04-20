@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import { getLastRepoByUserId } from "@/lib/db/last-repo";
 import {
   getArchivedSessionCountByUserId,
@@ -20,11 +21,13 @@ export default async function SessionsLayout({
     redirect("/");
   }
 
-  const [lastRepo, sessions, archivedCount] = await Promise.all([
-    getLastRepoByUserId(session.user.id),
-    getSessionsWithUnreadByUserId(session.user.id, { status: "active" }),
-    getArchivedSessionCountByUserId(session.user.id),
-  ]);
+  const [lastRepo, sessions, archivedCount] = hasDatabaseConfig()
+    ? await Promise.all([
+        getLastRepoByUserId(session.user.id),
+        getSessionsWithUnreadByUserId(session.user.id, { status: "active" }),
+        getArchivedSessionCountByUserId(session.user.id),
+      ])
+    : [null, [], 0];
 
   return (
     <SessionsRouteShell

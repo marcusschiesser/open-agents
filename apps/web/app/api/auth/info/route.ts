@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import { getGitHubAccount } from "@/lib/db/accounts";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import { userExists } from "@/lib/db/users";
@@ -68,6 +69,17 @@ export async function GET(req: NextRequest) {
 
   if (!session?.user?.id) {
     return Response.json(UNAUTHENTICATED);
+  }
+
+  if (!hasDatabaseConfig()) {
+    return Response.json({
+      user: session.user,
+      authProvider: session.authProvider,
+      hasGitHub: false,
+      hasGitHubAccount: false,
+      hasGitHubInstallations: false,
+      vercelReconnectRequired: false,
+    } satisfies SessionUserInfo);
   }
 
   const vercelReconnectPromise =

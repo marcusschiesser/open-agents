@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import {
   countSessionsByUserId,
   createSessionWithInitialChat,
@@ -93,6 +94,10 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  if (!hasDatabaseConfig()) {
+    return Response.json({ sessions: [], archivedCount: 0 });
+  }
+
   const { searchParams } = new URL(req.url);
   const rawStatus = searchParams.get("status");
   if (
@@ -170,6 +175,13 @@ export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (!hasDatabaseConfig()) {
+    return Response.json(
+      { error: "Session creation requires POSTGRES_URL" },
+      { status: 503 },
+    );
   }
 
   if (isManagedTemplateTrialUser(session, req.url)) {
