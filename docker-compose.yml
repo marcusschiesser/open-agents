@@ -99,7 +99,7 @@ services:
     environment:
       ENVIRONMENT: development
       API_PORT: 3003
-      DAYTONA_DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0
+      DAYTONA_DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0-slim
       DAYTONA_RUNNER_TOKEN: secret_api_token
       LOG_FILE_PATH: /home/daytona/runner/runner.log
       RESOURCE_LIMITS_DISABLED: "true"
@@ -153,7 +153,7 @@ services:
       retries: 20
     environment:
       OTEL_ENABLED: "false"
-      DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0
+      DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0-slim
       ENCRYPTION_KEY: supersecretkey
       ENCRYPTION_SALT: supersecretsalt
       NODE_ENV: production
