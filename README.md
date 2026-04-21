@@ -74,6 +74,18 @@ VERCEL_APP_CLIENT_SECRET=
 
 Without these, the site can deploy, but Vercel sign-in will not work.
 
+### Required for model access
+
+The app now uses direct provider SDKs instead of AI Gateway. Configure at least one
+model provider key:
+
+```env
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+```
+
+If neither key is set, the model picker will be empty and agent runs cannot start.
+
 ### Required for GitHub repo access, pushes, and PRs
 
 If you want users to connect GitHub, install the app on repos/orgs, clone private repos, push branches, or open PRs, add these GitHub App values:
@@ -96,6 +108,8 @@ VERCEL_PROJECT_PRODUCTION_URL=
 NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=
 VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
 ELEVENLABS_API_KEY=
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 DAYTONA_API_URL=
 DAYTONA_API_KEY=
 DAYTONA_TARGET=
@@ -105,6 +119,7 @@ DAYTONA_TARGET=
 - `VERCEL_PROJECT_PRODUCTION_URL` / `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`: canonical production URL for metadata and some callback behavior.
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: override the default sandbox snapshot.
 - `ELEVENLABS_API_KEY`: voice transcription.
+- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`: direct model-provider access for the chat runtime and model picker.
 - `DAYTONA_API_URL` / `DAYTONA_API_KEY` / `DAYTONA_TARGET`: use Daytona as the sandbox backend; local Docker Compose wires these automatically.
 
 ## Deploy your own copy on Vercel
@@ -173,6 +188,7 @@ The stack exposes:
 - Daytona proxy: `http://localhost:4000`
 
 The `web` container bootstraps a local Daytona API key automatically and repairs the seeded local Daytona org quotas so sandbox creation works without extra manual setup.
+Pass `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` into `docker compose up` from your shell or `.env` file so the local app can list and invoke models.
 
 ### Manual local path
 

@@ -96,7 +96,7 @@ async function connectNamedSandbox(
       throw error;
     }
 
-    if (!canRecreateSandboxFromState(state)) {
+    if (options.resume !== false && !canRecreateSandboxFromState(state)) {
       throw error;
     }
   }

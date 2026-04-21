@@ -1,28 +1,41 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ProviderOptionsByProvider } from "./models";
 
-mock.module("ai", () => {
-  const gateway = (modelId: string) => ({ modelId });
+const openAIInvocations: Array<{ apiKey: string; modelId: string }> = [];
+const anthropicInvocations: Array<{ apiKey: string; modelId: string }> = [];
 
-  return {
-    createGateway: () => gateway,
-    defaultSettingsMiddleware: (_settings: unknown) => ({
-      kind: "default-settings-middleware",
-    }),
-    gateway,
-    wrapLanguageModel: ({ model }: { model: unknown }) => model,
-  };
-});
+mock.module("@ai-sdk/openai", () => ({
+  createOpenAI: ({ apiKey }: { apiKey: string }) => (modelId: string) => {
+    openAIInvocations.push({ apiKey, modelId });
+    return { provider: "openai", modelId };
+  },
+}));
 
-mock.module("@ai-sdk/devtools", () => ({
-  devToolsMiddleware: () => ({ kind: "devtools-middleware" }),
+mock.module("@ai-sdk/anthropic", () => ({
+  createAnthropic:
+    ({ apiKey }: { apiKey: string }) =>
+    (modelId: string) => {
+      anthropicInvocations.push({ apiKey, modelId });
+      return { provider: "anthropic", modelId };
+    },
+}));
+
+mock.module("ai", () => ({
+  defaultSettingsMiddleware: (_settings: unknown) => ({
+    kind: "default-settings-middleware",
+  }),
+  wrapLanguageModel: ({ model }: { model: unknown }) => model,
 }));
 
 const {
+  gateway,
   getProviderOptionsForModel,
   mergeProviderOptions,
   shouldApplyOpenAIReasoningDefaults,
 } = await import("./models");
+
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
+const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
 
 describe("shouldApplyOpenAIReasoningDefaults", () => {
   test("returns true for existing GPT-5 variants", () => {
@@ -105,7 +118,7 @@ describe("getProviderOptionsForModel", () => {
     });
   });
 
-  test("preserves store false and encrypted reasoning content for the built-in GPT-5.4 variant", () => {
+  test("preserves low text verbosity when GPT-5.4 overrides reasoning settings", () => {
     const result = getProviderOptionsForModel("openai/gpt-5.4", {
       openai: {
         reasoningEffort: "xhigh",
@@ -231,5 +244,71 @@ describe("mergeProviderOptions", () => {
         include: ["reasoning.summary"],
       },
     });
+  });
+});
+
+describe("gateway", () => {
+  beforeEach(() => {
+    openAIInvocations.length = 0;
+    anthropicInvocations.length = 0;
+    process.env.OPENAI_API_KEY = "openai-test-key";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+  });
+
+  afterEach(() => {
+    process.env.OPENAI_API_KEY = originalOpenAIKey;
+    process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+  });
+
+  test("creates an OpenAI model via the provider factory", () => {
+    const model = gateway("openai/gpt-5.4");
+
+    expect(model as unknown).toEqual({
+      provider: "openai",
+      modelId: "gpt-5.4",
+    });
+    expect(openAIInvocations).toEqual([
+      {
+        apiKey: "openai-test-key",
+        modelId: "gpt-5.4",
+      },
+    ]);
+  });
+
+  test("creates an Anthropic model via the provider factory", () => {
+    const model = gateway("anthropic/claude-haiku-4.5");
+
+    expect(model as unknown).toEqual({
+      provider: "anthropic",
+      modelId: "claude-haiku-4.5",
+    });
+    expect(anthropicInvocations).toEqual([
+      {
+        apiKey: "anthropic-test-key",
+        modelId: "claude-haiku-4.5",
+      },
+    ]);
+  });
+
+  test("fails fast when the OpenAI key is missing", () => {
+    delete process.env.OPENAI_API_KEY;
+
+    expect(() => gateway("openai/gpt-5.4")).toThrow(
+      "OPENAI_API_KEY is required to use direct OpenAI models.",
+    );
+  });
+
+  test("fails fast when the Anthropic key is missing", () => {
+    delete process.env.ANTHROPIC_API_KEY;
+
+    expect(() => gateway("anthropic/claude-haiku-4.5")).toThrow(
+      "ANTHROPIC_API_KEY is required to use direct Anthropic models.",
+    );
+  });
+
+  test("fails for unsupported providers", () => {
+    expect(() =>
+      gateway("google/gemini-2.5-pro" as Parameters<typeof gateway>[0]),
+    ).toThrow('Unsupported model provider "google"');
   });
 });

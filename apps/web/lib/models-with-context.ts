@@ -1,19 +1,17 @@
 import "server-only";
 
-import { gateway } from "ai";
 import { z } from "zod";
 import { filterDisabledModels } from "./model-availability";
-import type {
-  AvailableModel,
-  AvailableModelCost,
-  AvailableModelCostTier,
-  GatewayAvailableModel,
+import {
+  type AvailableModel,
+  type AvailableModelCost,
+  type AvailableModelCostTier,
+  isProviderConfigured,
+  STATIC_AVAILABLE_LANGUAGE_MODELS,
 } from "./models";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_TIMEOUT_MS = 750;
-
-type GatewayModel = GatewayAvailableModel;
 
 interface ModelsDevMetadata {
   contextWindow?: number;
@@ -21,21 +19,6 @@ interface ModelsDevMetadata {
 }
 
 const recordSchema = z.object({}).catchall(z.unknown());
-
-const gatewayModelSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().nullish(),
-    modelType: z.string().nullish(),
-  })
-  .passthrough();
-
-const gatewayErrorSchema = z.object({
-  response: z.object({
-    models: z.array(z.unknown()),
-  }),
-});
 
 const modelsDevLimitSchema = z
   .object({
@@ -50,20 +33,6 @@ const modelsDevCostTierSchema = z
     cache_read: z.number().finite().optional(),
   })
   .passthrough();
-
-function getModelsFromGatewayError(error: unknown): GatewayModel[] | undefined {
-  const parsed = gatewayErrorSchema.safeParse(error);
-  if (!parsed.success) {
-    return undefined;
-  }
-
-  const models = parsed.data.response.models.flatMap((model) => {
-    const parsedModel = gatewayModelSchema.safeParse(model);
-    return parsedModel.success ? [parsedModel.data] : [];
-  });
-
-  return models.length > 0 ? models : undefined;
-}
 
 function getModelsDevCostTier(
   value: unknown,
@@ -167,6 +136,7 @@ async function fetchModelsDevMetadataMap(): Promise<
     if (!response.ok) {
       return new Map();
     }
+
     const data: unknown = await response.json();
     return getModelsDevMetadataMap(data);
   } catch {
@@ -177,7 +147,7 @@ async function fetchModelsDevMetadataMap(): Promise<
 }
 
 function addModelsDevMetadata(
-  model: GatewayModel,
+  model: AvailableModel,
   metadataMap: Map<string, ModelsDevMetadata>,
 ): AvailableModel {
   const metadata = metadataMap.get(model.id);
@@ -201,26 +171,18 @@ function addModelsDevMetadata(
   return nextModel;
 }
 
-async function fetchGatewayModels(): Promise<GatewayModel[]> {
-  try {
-    const { models } = await gateway.getAvailableModels();
-    return models;
-  } catch (error) {
-    const models = getModelsFromGatewayError(error);
-    if (models) {
-      return models;
-    }
-
-    throw error;
-  }
+function filterConfiguredProviders(models: AvailableModel[]): AvailableModel[] {
+  return models.filter((model) => {
+    const provider = model.id.split("/", 1)[0];
+    return provider ? isProviderConfigured(provider) : false;
+  });
 }
 
 export async function fetchAvailableLanguageModels(): Promise<
   AvailableModel[]
 > {
-  const models = await fetchGatewayModels();
   return filterDisabledModels(
-    models.filter((model) => model.modelType === "language"),
+    filterConfiguredProviders(STATIC_AVAILABLE_LANGUAGE_MODELS),
   );
 }
 
@@ -232,7 +194,5 @@ export async function fetchAvailableLanguageModelsWithContext(): Promise<
     fetchModelsDevMetadataMap(),
   ]);
 
-  return models.map((model) =>
-    addModelsDevMetadata(model, modelsDevMetadataMap),
-  );
+  return models.map((model) => addModelsDevMetadata(model, modelsDevMetadataMap));
 }

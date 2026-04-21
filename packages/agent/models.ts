@@ -1,14 +1,11 @@
+import { createAnthropic, type AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
+import { createOpenAI, type OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import {
-  createGateway,
   defaultSettingsMiddleware,
-  gateway as aiGateway,
   wrapLanguageModel,
-  type GatewayModelId,
   type JSONValue,
-  type LanguageModel,
 } from "ai";
-import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
-import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
   return modelId.includes("4.6") || modelId.includes("4.7");
@@ -88,17 +85,15 @@ export function mergeProviderOptions(
   return merged;
 }
 
-export interface GatewayConfig {
-  baseURL: string;
-  apiKey: string;
-}
+export type SupportedModelProvider = "anthropic" | "openai";
+export type GatewayModelId = `${SupportedModelProvider}/${string}`;
 
 export interface GatewayOptions {
-  config?: GatewayConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
 }
 
-export type { GatewayModelId, LanguageModel, JSONValue };
+export type LanguageModel = LanguageModelV3;
+export type { JSONValue };
 
 export function shouldApplyOpenAIReasoningDefaults(modelId: string): boolean {
   return modelId.startsWith("openai/gpt-5");
@@ -168,18 +163,89 @@ export function getProviderOptionsForModel(
   return providerOptions;
 }
 
+function parseModelId(modelId: GatewayModelId): {
+  provider: SupportedModelProvider;
+  providerModelId: string;
+} {
+  const separatorIndex = modelId.indexOf("/");
+  if (separatorIndex <= 0 || separatorIndex === modelId.length - 1) {
+    throw new Error(`Invalid model id "${modelId}". Expected "<provider>/<model>".`);
+  }
+
+  const provider = modelId.slice(0, separatorIndex);
+  const providerModelId = modelId.slice(separatorIndex + 1);
+
+  if (provider !== "anthropic" && provider !== "openai") {
+    throw new Error(
+      `Unsupported model provider "${provider}" for "${modelId}". Supported providers: anthropic, openai.`,
+    );
+  }
+
+  return {
+    provider,
+    providerModelId,
+  };
+}
+
+function getRequiredApiKey(envVarName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY"): string {
+  const apiKey = process.env[envVarName]?.trim();
+
+  if (!apiKey) {
+    throw new Error(
+      `${envVarName} is required to use direct ${envVarName === "OPENAI_API_KEY" ? "OpenAI" : "Anthropic"} models.`,
+    );
+  }
+
+  return apiKey;
+}
+
+const openAIProviderCache = new Map<string, ReturnType<typeof createOpenAI>>();
+const anthropicProviderCache = new Map<string, ReturnType<typeof createAnthropic>>();
+
+function getOpenAIProvider(apiKey: string) {
+  const cachedProvider = openAIProviderCache.get(apiKey);
+  if (cachedProvider) {
+    return cachedProvider;
+  }
+
+  const provider = createOpenAI({ apiKey });
+  openAIProviderCache.set(apiKey, provider);
+  return provider;
+}
+
+function getAnthropicProvider(apiKey: string) {
+  const cachedProvider = anthropicProviderCache.get(apiKey);
+  if (cachedProvider) {
+    return cachedProvider;
+  }
+
+  const provider = createAnthropic({ apiKey });
+  anthropicProviderCache.set(apiKey, provider);
+  return provider;
+}
+
+function createBaseLanguageModel(modelId: GatewayModelId): LanguageModel {
+  const { provider, providerModelId } = parseModelId(modelId);
+
+  switch (provider) {
+    case "anthropic":
+      return getAnthropicProvider(getRequiredApiKey("ANTHROPIC_API_KEY"))(
+        providerModelId,
+      );
+    case "openai":
+      return getOpenAIProvider(getRequiredApiKey("OPENAI_API_KEY"))(
+        providerModelId,
+      );
+  }
+}
+
 export function gateway(
   modelId: GatewayModelId,
   options: GatewayOptions = {},
 ): LanguageModel {
-  const { config, providerOptionsOverrides } = options;
+  const { providerOptionsOverrides } = options;
 
-  // Use custom gateway config or default AI SDK gateway
-  const baseGateway = config
-    ? createGateway({ baseURL: config.baseURL, apiKey: config.apiKey })
-    : aiGateway;
-
-  let model: LanguageModel = baseGateway(modelId);
+  let model: LanguageModel = createBaseLanguageModel(modelId);
 
   const providerOptions = getProviderOptionsForModel(
     modelId,

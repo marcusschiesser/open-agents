@@ -291,6 +291,8 @@ services:
       DAYTONA_DB_NAME: daytona
       DAYTONA_DB_USER: user
       DAYTONA_DB_PASSWORD: pass
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "3000:3000"
     working_dir: /app

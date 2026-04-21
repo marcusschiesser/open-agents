@@ -195,6 +195,9 @@ export async function POST(req: Request) {
     : undefined;
 
   const sandboxType = body.sandboxType ?? DEFAULT_APP_SANDBOX_TYPE;
+  const hasResumeState =
+    sessionRecord?.sandboxState?.type === sandboxType &&
+    hasResumableSandboxState(sessionRecord.sandboxState);
 
   const sandbox = await connectSandbox({
     state: {
@@ -209,7 +212,7 @@ export async function POST(req: Request) {
       ports: DEFAULT_SANDBOX_PORTS,
       baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
       persistent: !!sandboxName,
-      resume: !!sandboxName,
+      resume: !!sandboxName && hasResumeState,
       createIfMissing: !!sandboxName,
     },
   });

@@ -102,4 +102,26 @@ describe("resolveChatModelSelection", () => {
       id: APP_DEFAULT_MODEL_ID,
     });
   });
+
+  test("falls back to Anthropic when OpenAI is not configured", () => {
+    const originalOpenAIKey = process.env.OPENAI_API_KEY;
+    const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+
+    try {
+      const selection = resolveChatModelSelection({
+        selectedModelId: null,
+        modelVariants: [],
+        missingVariantLabel: "Selected model variant",
+      });
+
+      expect(selection).toEqual({
+        id: "anthropic/claude-haiku-4.5",
+      });
+    } finally {
+      process.env.OPENAI_API_KEY = originalOpenAIKey;
+      process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    }
+  });
 });

@@ -7,7 +7,7 @@ interface TestSessionRecord {
   id: string;
   userId: string;
   lifecycleVersion: number;
-  sandboxState: { type: "vercel" };
+  sandboxState: { type: "vercel" | "daytona"; sandboxName?: string } | null;
   vercelProjectId: string | null;
   vercelProjectName: string | null;
   vercelTeamId: string | null;
@@ -27,7 +27,7 @@ interface KickCall {
 
 interface ConnectConfig {
   state: {
-    type: "vercel";
+    type: "vercel" | "daytona";
     sandboxName?: string;
     source?: {
       repo?: string;
@@ -226,11 +226,44 @@ describe("/api/sandbox lifecycle kicks", () => {
       },
       options: {
         persistent: true,
-        resume: true,
+        resume: false,
         createIfMissing: true,
       },
     });
     expect(dotenvSyncCalls).toHaveLength(0);
+  });
+
+  test("creates a fresh named Daytona sandbox when the session has no resumable state", async () => {
+    const { POST } = await routeModulePromise;
+
+    sessionRecord.sandboxState = null;
+    sessionRecord.vercelProjectId = null;
+    sessionRecord.vercelProjectName = null;
+    sessionRecord.vercelTeamId = null;
+
+    const response = await POST(
+      new Request("http://localhost/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          sandboxType: "daytona",
+        }),
+      }),
+    );
+
+    expect(response.ok).toBe(true);
+    expect(connectConfigs[0]).toMatchObject({
+      state: {
+        type: "daytona",
+        sandboxName: "session_session-1",
+      },
+      options: {
+        persistent: true,
+        resume: false,
+        createIfMissing: true,
+      },
+    });
   });
 
   test("repo sandboxes broker the user GitHub token instead of embedding it", async () => {

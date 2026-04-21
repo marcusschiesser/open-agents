@@ -25,6 +25,92 @@ export type AvailableModel = GatewayAvailableModel & {
   cost?: AvailableModelCost;
 };
 
+export const STATIC_AVAILABLE_LANGUAGE_MODELS: AvailableModel[] = [
+  {
+    id: "anthropic/claude-haiku-4.5",
+    name: "Claude Haiku 4.5",
+    description: "Fast Anthropic model for lightweight agent tasks.",
+    modelType: "language",
+    context_window: 200_000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4",
+    name: "Claude Sonnet 4",
+    description: "Balanced Anthropic model for general-purpose coding work.",
+    modelType: "language",
+    context_window: 200_000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    description: "Latest Sonnet generation with adaptive thinking support.",
+    modelType: "language",
+    context_window: 200_000,
+  },
+  {
+    id: "anthropic/claude-opus-4.6",
+    name: "Claude Opus 4.6",
+    description: "Highest-capability Anthropic model for complex coding tasks.",
+    modelType: "language",
+    context_window: 200_000,
+  },
+  {
+    id: "openai/gpt-4o-mini",
+    name: "GPT-4o mini",
+    description: "Fast, lower-cost OpenAI model.",
+    modelType: "language",
+    context_window: 128_000,
+  },
+  {
+    id: "openai/gpt-5",
+    name: "GPT-5",
+    description: "General GPT-5 reasoning model.",
+    modelType: "language",
+    context_window: 272_000,
+  },
+  {
+    id: "openai/gpt-5-mini",
+    name: "GPT-5 mini",
+    description: "Smaller GPT-5 model for cheaper, faster runs.",
+    modelType: "language",
+    context_window: 272_000,
+  },
+  {
+    id: "openai/gpt-5.3-codex",
+    name: "GPT-5.3 Codex",
+    description: "Codex-oriented GPT-5.3 model for implementation tasks.",
+    modelType: "language",
+    context_window: 200_000,
+  },
+  {
+    id: "openai/gpt-5.4",
+    name: "GPT-5.4",
+    description: "Default OpenAI flagship model for the app.",
+    modelType: "language",
+    context_window: 272_000,
+  },
+];
+
+export function hasOpenAIKey(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+export function hasAnthropicKey(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+}
+
+export function isProviderConfigured(provider: string): boolean {
+  if (provider === "openai") {
+    return hasOpenAIKey();
+  }
+
+  if (provider === "anthropic") {
+    return hasAnthropicKey();
+  }
+
+  return false;
+}
+
 export function getModelDisplayName(model: AvailableModel): string {
   return model.name ?? model.id;
 }

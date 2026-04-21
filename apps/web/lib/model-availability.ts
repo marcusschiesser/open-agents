@@ -1,4 +1,8 @@
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import {
+  APP_DEFAULT_MODEL_ID,
+  DEFAULT_MODEL_ID,
+  isProviderConfigured,
+} from "@/lib/models";
 
 const DISABLED_MODEL_IDS = new Set(["openai/gpt-5.4-pro"]);
 
@@ -13,9 +17,23 @@ export function filterDisabledModels<T extends { id: string }>(
 }
 
 export function resolveAvailableModelId(modelId: string): string {
-  if (isModelDisabled(modelId)) {
-    return APP_DEFAULT_MODEL_ID;
+  const provider = modelId.split("/", 1)[0];
+
+  if (!provider || isModelDisabled(modelId) || !isProviderConfigured(provider)) {
+    return getConfiguredDefaultModelId();
   }
 
   return modelId;
+}
+
+export function getConfiguredDefaultModelId(): string {
+  if (!isModelDisabled(APP_DEFAULT_MODEL_ID) && isProviderConfigured("openai")) {
+    return APP_DEFAULT_MODEL_ID;
+  }
+
+  if (isProviderConfigured("anthropic")) {
+    return DEFAULT_MODEL_ID;
+  }
+
+  return APP_DEFAULT_MODEL_ID;
 }
