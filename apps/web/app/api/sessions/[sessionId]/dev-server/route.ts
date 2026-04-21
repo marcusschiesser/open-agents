@@ -63,6 +63,12 @@ interface LaunchableDevServerTarget extends ResolvedDevServerTarget {
   candidate: DevServerCandidate;
 }
 
+interface PackageManagerResolution {
+  packageManager: PackageManager;
+  installRootAbs: string;
+  bootstrapBun: boolean;
+}
+
 interface PersistedDevServerTarget {
   packageDir: string;
   port: number;
@@ -128,6 +134,10 @@ function parseManifest(content: string): PackageManifest | null {
 
 function normalizePackageJsonPath(packageJsonPath: string): string {
   return packageJsonPath.replace(/^\.\//, "");
+}
+
+function isPackageJsonPath(entry: string): boolean {
+  return entry === "package.json" || entry.endsWith("/package.json");
 }
 
 function normalizePackageDir(packageJsonPath: string): string {
@@ -488,7 +498,38 @@ async function detectPackageManager(
   sandbox: ConnectedSandbox,
   packageDirAbs: string,
   packageManagerField: string | undefined,
-): Promise<{ packageManager: PackageManager; installRootAbs: string }> {
+): Promise<PackageManagerResolution> {
+  async function hasPackageManagerBinary(
+    packageManager: PackageManager,
+  ): Promise<boolean> {
+    const result = await sandbox.exec(
+      `sh -lc 'command -v ${packageManager}'`,
+      packageDirAbs,
+      5_000,
+    );
+    return result.success;
+  }
+
+  async function resolveAvailablePackageManager(
+    preferred: PackageManager,
+  ): Promise<{ packageManager: PackageManager; bootstrapBun: boolean }> {
+    if (await hasPackageManagerBinary(preferred)) {
+      return { packageManager: preferred, bootstrapBun: false };
+    }
+
+    for (const packageManager of ["bun", "npm", "pnpm", "yarn"] as const) {
+      if (packageManager === preferred) {
+        continue;
+      }
+
+      if (await hasPackageManagerBinary(packageManager)) {
+        return { packageManager, bootstrapBun: false };
+      }
+    }
+
+    return { packageManager: "bun", bootstrapBun: true };
+  }
+
   const ancestorDirectories = getAncestorDirectories(
     packageDirAbs,
     sandbox.workingDirectory,
@@ -498,9 +539,13 @@ async function detectPackageManager(
     for (const entry of PACKAGE_MANAGER_LOCKFILES) {
       for (const lockfile of entry.files) {
         if (await pathExists(sandbox, path.posix.join(directory, lockfile))) {
+          const resolvedPackageManager = await resolveAvailablePackageManager(
+            entry.manager,
+          );
           return {
-            packageManager: entry.manager,
+            packageManager: resolvedPackageManager.packageManager,
             installRootAbs: directory,
+            bootstrapBun: resolvedPackageManager.bootstrapBun,
           };
         }
       }
@@ -518,16 +563,26 @@ async function detectPackageManager(
     );
     const packageManager = parsePackageManagerName(manifest?.packageManager);
     if (packageManager) {
+      const resolvedPackageManager =
+        await resolveAvailablePackageManager(packageManager);
       return {
-        packageManager,
+        packageManager: resolvedPackageManager.packageManager,
         installRootAbs: directory,
+        bootstrapBun: resolvedPackageManager.bootstrapBun,
       };
     }
   }
 
+  const fallbackPackageManager =
+    parsePackageManagerName(packageManagerField) ?? "npm";
+  const resolvedPackageManager = await resolveAvailablePackageManager(
+    fallbackPackageManager,
+  );
+
   return {
-    packageManager: parsePackageManagerName(packageManagerField) ?? "npm",
+    packageManager: resolvedPackageManager.packageManager,
     installRootAbs: packageDirAbs,
+    bootstrapBun: resolvedPackageManager.bootstrapBun,
   };
 }
 
@@ -634,6 +689,15 @@ function buildRunCommand(
   }
 }
 
+function buildBunBootstrapCommand(): string {
+  return [
+    `export BUN_INSTALL="\${BUN_INSTALL:-$HOME/.bun}"`,
+    'export PATH="$BUN_INSTALL/bin:$PATH"',
+    "if ! command -v bun >/dev/null 2>&1; then if ! command -v unzip >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then if command -v sudo >/dev/null 2>&1; then sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip; else apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip; fi; else echo 'Bun bootstrap requires unzip' >&2; exit 1; fi; fi; if command -v curl >/dev/null 2>&1; then curl -fsSL https://bun.sh/install | bash; elif command -v wget >/dev/null 2>&1; then wget -qO- https://bun.sh/install | bash; else echo 'Bun bootstrap requires curl or wget' >&2; exit 1; fi; fi",
+    'export PATH="$BUN_INSTALL/bin:$PATH"',
+  ].join(" && ");
+}
+
 function getDevServerPidFilePath(packageDirAbs: string, port: number): string {
   return path.posix.join(
     packageDirAbs,
@@ -649,6 +713,7 @@ function buildLaunchCommand(params: {
   packageDirAbs: string;
   installDependencies: boolean;
   pidFilePath: string;
+  bootstrapBun: boolean;
 }): string {
   const runCommand = buildRunCommand(
     params.packageManager,
@@ -656,6 +721,10 @@ function buildLaunchCommand(params: {
     params.port,
   );
   const commandSteps = [`printf '%s' "$$" > ${shellQuote(params.pidFilePath)}`];
+
+  if (params.bootstrapBun) {
+    commandSteps.unshift(buildBunBootstrapCommand());
+  }
 
   if (params.installDependencies) {
     const installCommand = INSTALL_COMMANDS[params.packageManager];
@@ -691,6 +760,40 @@ async function buildDevServerResponse(
     port: target.port,
     url: await resolveSandboxPreviewUrl(sandbox, target.port),
   };
+}
+
+async function waitForDevServerReady(params: {
+  sandbox: ConnectedSandbox;
+  packageDirAbs: string;
+  port: number;
+  timeoutMs?: number;
+}): Promise<boolean> {
+  const configuredTimeoutMs = Number.parseInt(
+    process.env.DEV_SERVER_READY_TIMEOUT_MS ?? "",
+    10,
+  );
+  const timeoutMs =
+    params.timeoutMs ??
+    (Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? configuredTimeoutMs
+      : 15_000);
+  const deadline = Date.now() + timeoutMs;
+  const probeCommand = `sh -lc 'if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null http://127.0.0.1:${params.port}/; elif command -v wget >/dev/null 2>&1; then wget --spider --quiet http://127.0.0.1:${params.port}/; else exit 1; fi'`;
+
+  while (Date.now() < deadline) {
+    const probe = await params.sandbox.exec(
+      probeCommand,
+      params.packageDirAbs,
+      5_000,
+    );
+    if (probe.success) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  return false;
 }
 
 async function clearPersistedDevServerTarget(
@@ -822,6 +925,7 @@ async function findDevServerCandidates(
     .split("\n")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
+    .filter((entry) => isPackageJsonPath(entry))
     .map((entry) => normalizePackageJsonPath(entry))
     .slice(0, 100);
 
@@ -958,11 +1062,12 @@ export async function POST(_req: Request, context: RouteContext) {
       return Response.json(await buildDevServerResponse(sandbox, target));
     }
 
-    const { packageManager, installRootAbs } = await detectPackageManager(
-      sandbox,
-      packageDirAbs,
-      candidate.packageManagerField,
-    );
+    const { packageManager, installRootAbs, bootstrapBun } =
+      await detectPackageManager(
+        sandbox,
+        packageDirAbs,
+        candidate.packageManagerField,
+      );
     const installDependencies = await shouldInstallDependencies({
       sandbox,
       installRootAbs,
@@ -977,6 +1082,7 @@ export async function POST(_req: Request, context: RouteContext) {
       packageDirAbs,
       installDependencies,
       pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
+      bootstrapBun,
     });
 
     try {
@@ -986,6 +1092,22 @@ export async function POST(_req: Request, context: RouteContext) {
         () => undefined,
       );
       throw error;
+    }
+
+    const isReady = await waitForDevServerReady({
+      sandbox,
+      packageDirAbs,
+      port,
+    });
+    if (!isReady) {
+      await clearDevServerPidFile(sandbox, packageDirAbs, port).catch(
+        () => undefined,
+      );
+      await clearPersistedDevServerTarget(sandbox).catch(() => undefined);
+      return Response.json(
+        { error: `Dev server failed to start on port ${port}` },
+        { status: 500 },
+      );
     }
 
     await writePersistedDevServerTarget(sandbox, target);

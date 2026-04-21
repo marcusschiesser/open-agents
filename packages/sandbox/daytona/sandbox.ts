@@ -20,8 +20,6 @@ import type { DaytonaState } from "./state";
 const MAX_OUTPUT_LENGTH = 50_000;
 const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000;
 const DETACHED_QUICK_FAILURE_WINDOW_MS = 2_000;
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 60 * 1000;
-
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -63,8 +61,8 @@ function getCommandEnv(
   }
 
   return {
-    ...(sandboxEnv ?? {}),
-    ...(env ?? {}),
+    ...sandboxEnv,
+    ...env,
   };
 }
 
@@ -113,8 +111,7 @@ export class DaytonaSandbox implements Sandbox {
   readonly env?: Record<string, string>;
   readonly currentBranch?: string;
   readonly hooks?: SandboxHooks;
-  readonly environmentDetails =
-    `- Sandbox VMs are temporary, but named sandboxes can be hibernated and later resumed from their persisted filesystem state
+  readonly environmentDetails = `- Sandbox VMs are temporary, but named sandboxes can be hibernated and later resumed from their persisted filesystem state
 - All bash commands already run in the working directory by default — never prepend \`cd <working-directory> &&\`; just run the command directly
 - Do NOT prefix any bash command with a \`cd\` to the working directory — commands like \`cd <working-directory> && npm test\` are WRONG; just use \`npm test\`
 - Use workspace-relative paths for read/write/search/edit operations
@@ -177,8 +174,10 @@ export class DaytonaSandbox implements Sandbox {
 
     if (config.source) {
       const cloneUrl = config.source.token
-        ? (buildAuthenticatedGitHubUrl(config.source.url, config.source.token) ??
-          config.source.url)
+        ? (buildAuthenticatedGitHubUrl(
+            config.source.url,
+            config.source.token,
+          ) ?? config.source.url)
         : config.source.url;
       const cloneCommand = [
         "git clone",
@@ -228,7 +227,7 @@ export class DaytonaSandbox implements Sandbox {
       }
     }
 
-    if (config.gitUser && (config.source || !config.source)) {
+    if (config.gitUser) {
       await sandbox.process.executeCommand(
         `git config user.name ${shellEscape(config.gitUser.name)}`,
         workingDirectory,
@@ -374,7 +373,10 @@ export class DaytonaSandbox implements Sandbox {
     return previewUrl;
   }
 
-  async mkdir(pathname: string, options?: { recursive?: boolean }): Promise<void> {
+  async mkdir(
+    pathname: string,
+    options?: { recursive?: boolean },
+  ): Promise<void> {
     if (options?.recursive) {
       await this.exec(
         `mkdir -p ${shellEscape(pathname)}`,
@@ -413,7 +415,7 @@ export class DaytonaSandbox implements Sandbox {
         throw options.signal.reason;
       }
 
-      const abortPromise = new Promise<never>((_, reject) => {
+      const abortPromise = new Promise<never>((_resolve, reject) => {
         options.signal?.addEventListener(
           "abort",
           () => reject(options.signal?.reason),
@@ -464,40 +466,59 @@ export class DaytonaSandbox implements Sandbox {
     command: string,
     cwd: string,
   ): Promise<{ commandId: string }> {
-    const outputChunks: string[] = [];
-    const ptyHandle = await this.sandbox.process.createPty({
-      id: randomUUID(),
-      cwd,
-      envs: this.env,
-      onData(data) {
-        outputChunks.push(new TextDecoder().decode(data));
-      },
-    });
+    const sessionId = randomUUID();
+    await this.sandbox.process.createSession(sessionId);
 
-    await ptyHandle.waitForConnection();
-
-    await ptyHandle.sendInput(`${command}\n`);
-    await ptyHandle.sendInput("disown -a >/dev/null 2>&1 || true\n");
-    await ptyHandle.sendInput("exit\n");
-
-    const quickProbe = await Promise.race([
-      ptyHandle.wait().then((result) => ({ kind: "finished", result }) as const),
-      new Promise<{ kind: "timeout" }>((resolve) => {
-        setTimeout(() => resolve({ kind: "timeout" }), DETACHED_QUICK_FAILURE_WINDOW_MS);
-      }),
-    ]);
-
-    if (quickProbe.kind === "timeout") {
-      return { commandId: ptyHandle.sessionId };
-    }
-
-    if ((quickProbe.result.exitCode ?? 1) !== 0) {
-      throw new Error(
-        `Background command exited with code ${quickProbe.result.exitCode ?? 1}. output:\n${outputChunks.join("").trim() || "<no output>"}`,
+    try {
+      const result = await this.sandbox.process.executeSessionCommand(
+        sessionId,
+        {
+          command: `bash -lc ${shellEscape(`cd ${shellEscape(cwd)} && ${command}`)}`,
+          runAsync: true,
+          suppressInputEcho: true,
+        },
       );
-    }
 
-    return { commandId: ptyHandle.sessionId };
+      const timeoutResult = new Promise<{ kind: "timeout" }>((resolve) => {
+        setTimeout(
+          () => resolve({ kind: "timeout" }),
+          DETACHED_QUICK_FAILURE_WINDOW_MS,
+        );
+      });
+
+      const waitResult = this.sandbox.process
+        .getSessionCommand(sessionId, result.cmdId)
+        .then((commandInfo) => ({ kind: "finished", commandInfo }) as const)
+        .catch((error: unknown) => ({ kind: "error", error }) as const);
+
+      const quickProbe = await Promise.race([waitResult, timeoutResult]);
+
+      if (quickProbe.kind === "timeout") {
+        return { commandId: result.cmdId };
+      }
+
+      if (quickProbe.kind === "error") {
+        throw quickProbe.error;
+      }
+
+      if ((quickProbe.commandInfo.exitCode ?? 0) !== 0) {
+        const logs = await this.sandbox.process.getSessionCommandLogs(
+          sessionId,
+          result.cmdId,
+        );
+        const stderrSnippet = (logs.stderr || logs.output || "").trim();
+        throw new Error(
+          `Background command exited with code ${quickProbe.commandInfo.exitCode ?? 1}. stderr:\n${stderrSnippet || "<no stderr>"}`,
+        );
+      }
+
+      return { commandId: result.cmdId };
+    } catch (error) {
+      await this.sandbox.process
+        .deleteSession(sessionId)
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   async pause(): Promise<void> {
@@ -583,7 +604,8 @@ export async function connectDaytonaSandbox(
 
   if (isConnectConfig) {
     const connectConfig = config as DaytonaSandboxConnectConfig;
-    const sandboxNameOrId = connectConfig.sandboxName ?? connectConfig.sandboxId;
+    const sandboxNameOrId =
+      connectConfig.sandboxName ?? connectConfig.sandboxId;
     if (!sandboxNameOrId) {
       throw new Error("sandboxName or sandboxId is required");
     }

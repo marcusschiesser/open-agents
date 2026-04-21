@@ -29,6 +29,9 @@ let runningPids = new Set<string>();
 let lastLaunchCommand: string | null = null;
 let lastLaunchCwd: string | null = null;
 let currentMtimeMs = 1_000;
+let availableBinaries = new Set<
+  "bun" | "npm" | "pnpm" | "yarn" | "curl" | "wget"
+>(["bun", "curl"]);
 
 function successResult(stdout = "") {
   return {
@@ -123,6 +126,34 @@ const execMock = mock(async (command: string) => {
     return successResult(currentFindOutput);
   }
 
+  if (command.startsWith("sh -lc 'curl -fsS -o /dev/null http://127.0.0.1:")) {
+    return runningPids.has(RUNNING_PID)
+      ? successResult()
+      : failureResult("Connection refused");
+  }
+
+  if (
+    command.startsWith(
+      "sh -lc 'if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null http://127.0.0.1:",
+    )
+  ) {
+    return runningPids.has(RUNNING_PID)
+      ? successResult()
+      : failureResult("Connection refused");
+  }
+
+  if (command.startsWith("sh -lc 'command -v ")) {
+    const binary = command
+      .slice("sh -lc 'command -v ".length)
+      .replace(/'$/, "")
+      .trim();
+    return availableBinaries.has(
+      binary as "bun" | "npm" | "pnpm" | "yarn" | "curl" | "wget",
+    )
+      ? successResult(`/usr/bin/${binary}\n`)
+      : failureResult(`${binary}: not found`);
+  }
+
   if (command.startsWith("kill -0 ")) {
     const pid = command.slice("kill -0 ".length).trim();
     return runningPids.has(pid)
@@ -191,6 +222,7 @@ const execDetachedMock = mock(async (command: string, cwd: string) => {
   return { commandId: "cmd-1" };
 });
 const domainMock = mock((port: number) => `https://sb-${port}.vercel.run`);
+const getPreviewUrlMock = mock(async (port: number) => domainMock(port));
 const connectSandboxMock = mock(async () => ({
   workingDirectory: "/vercel/sandbox",
   exec: execMock,
@@ -199,6 +231,7 @@ const connectSandboxMock = mock(async () => ({
   stat: statMock,
   access: accessMock,
   execDetached: execDetachedMock,
+  getPreviewUrl: getPreviewUrlMock,
   domain: domainMock,
 }));
 
@@ -221,12 +254,14 @@ function createRouteContext(sessionId = "session-1") {
 
 describe("/api/sessions/[sessionId]/dev-server", () => {
   beforeEach(() => {
+    process.env.DEV_SERVER_READY_TIMEOUT_MS = "1000";
     currentMtimeMs = 1_000;
     fileContents = new Map();
     existingPaths = new Set<string>();
     pathEntries = new Map<string, MockPathEntry>();
     seedDefaultWorkspace();
     runningPids = new Set<string>();
+    availableBinaries = new Set(["bun", "curl"]);
     lastLaunchCommand = null;
     lastLaunchCwd = null;
     currentSessionRecord.sandboxState.expiresAt = Date.now() + 60_000;
@@ -240,6 +275,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     accessMock.mockClear();
     execDetachedMock.mockClear();
     domainMock.mockClear();
+    getPreviewUrlMock.mockClear();
   });
 
   test("prefers a direct app dev script over a root workspace orchestrator and returns its preview URL", async () => {
@@ -501,5 +537,56 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       "No supported dev script found in package.json files",
     );
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("returns 500 when the dev server never starts listening on its port", async () => {
+    const { POST } = await routeModulePromise;
+
+    execDetachedMock.mockImplementationOnce(
+      async (command: string, cwd: string) => {
+        lastLaunchCommand = command;
+        lastLaunchCwd = cwd;
+        return { commandId: "cmd-1" };
+      },
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("Dev server failed to start on port 3000");
+  });
+
+  test("bootstraps bun in slim sandboxes when no package manager binary is available", async () => {
+    const { POST } = await routeModulePromise;
+
+    availableBinaries = new Set(["curl"]);
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(lastLaunchCommand).not.toBeNull();
+
+    if (!lastLaunchCommand) {
+      throw new Error("Expected execDetached to receive a launch command");
+    }
+
+    expect(lastLaunchCommand).toContain("https://bun.sh/install");
+    expect(lastLaunchCommand).toContain(
+      `export BUN_INSTALL="\${BUN_INSTALL:-$HOME/.bun}"`,
+    );
+    expect(lastLaunchCommand).toContain("apt-get install -y unzip");
+    expect(lastLaunchCommand).toContain("bun install");
+    expect(lastLaunchCommand).toContain("bun run dev");
   });
 });
