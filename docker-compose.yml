@@ -293,6 +293,7 @@ services:
       DAYTONA_DB_PASSWORD: pass
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AUTH_BYPASS: "true"
     ports:
       - "3000:3000"
     working_dir: /app

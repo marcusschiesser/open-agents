@@ -110,6 +110,7 @@ VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
 ELEVENLABS_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
+AUTH_BYPASS=
 DAYTONA_API_URL=
 DAYTONA_API_KEY=
 DAYTONA_TARGET=
@@ -120,6 +121,7 @@ DAYTONA_TARGET=
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: override the default sandbox snapshot.
 - `ELEVENLABS_API_KEY`: voice transcription.
 - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`: direct model-provider access for the chat runtime and model picker.
+- `AUTH_BYPASS`: when set to `true`, bypasses cookie auth and returns a synthetic local session without touching the `users` table. Intended for local development only.
 - `DAYTONA_API_URL` / `DAYTONA_API_KEY` / `DAYTONA_TARGET`: use Daytona as the sandbox backend; local Docker Compose wires these automatically.
 
 ## Deploy your own copy on Vercel
@@ -188,6 +190,7 @@ The stack exposes:
 - Daytona proxy: `http://localhost:4000`
 
 The `web` container bootstraps a local Daytona API key automatically and repairs the seeded local Daytona org quotas so sandbox creation works without extra manual setup.
+Docker Compose also sets `AUTH_BYPASS=true` so local development can skip sign-in without hitting the database for a fallback user.
 Pass `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` into `docker compose up` from your shell or `.env` file so the local app can list and invoke models.
 
 ### Manual local path

@@ -1,10 +1,10 @@
 import { cache } from "react";
 import { and, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { db, hasDatabaseConfig } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import type { Session } from "./types";
 
+const AUTH_BYPASS_ENABLED = process.env.AUTH_BYPASS === "true";
 const LOCAL_FALLBACK_EXTERNAL_ID = "local-dev-user";
 const LOCAL_FALLBACK_USER_ID = "local-dev-user";
 
@@ -15,7 +15,16 @@ const LOCAL_FALLBACK_USER = {
   name: "Local User",
 } satisfies Omit<Session["user"], "id">;
 
-async function ensureLocalFallbackUserId(): Promise<string> {
+export function isAuthBypassEnabled(): boolean {
+  return AUTH_BYPASS_ENABLED;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __openHarnessAuthBypassUserIdPromise: Promise<string> | undefined;
+}
+
+async function ensureAuthBypassUserId(): Promise<string> {
   if (!hasDatabaseConfig()) {
     return LOCAL_FALLBACK_USER_ID;
   }
@@ -34,35 +43,54 @@ async function ensureLocalFallbackUserId(): Promise<string> {
     return existingUser.id;
   }
 
-  const userId = nanoid();
   const now = new Date();
 
-  await db.insert(users).values({
-    id: userId,
-    provider: "github",
-    externalId: LOCAL_FALLBACK_EXTERNAL_ID,
-    accessToken: "local-dev-access-token",
-    username: LOCAL_FALLBACK_USER.username,
-    email: LOCAL_FALLBACK_USER.email,
-    name: LOCAL_FALLBACK_USER.name,
-    avatarUrl: LOCAL_FALLBACK_USER.avatar,
-    createdAt: now,
-    updatedAt: now,
-    lastLoginAt: now,
+  await db
+    .insert(users)
+    .values({
+      id: LOCAL_FALLBACK_USER_ID,
+      provider: "github",
+      externalId: LOCAL_FALLBACK_EXTERNAL_ID,
+      accessToken: "local-dev-access-token",
+      username: LOCAL_FALLBACK_USER.username,
+      email: LOCAL_FALLBACK_USER.email,
+      name: LOCAL_FALLBACK_USER.name,
+      avatarUrl: LOCAL_FALLBACK_USER.avatar,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: now,
+    })
+    .onConflictDoNothing({
+      target: [users.provider, users.externalId],
+    });
+
+  const userAfterInsert = await db.query.users.findFirst({
+    where: and(
+      eq(users.provider, "github"),
+      eq(users.externalId, LOCAL_FALLBACK_EXTERNAL_ID),
+    ),
+    columns: {
+      id: true,
+    },
   });
 
-  return userId;
+  if (!userAfterInsert) {
+    throw new Error("Failed to initialize auth bypass user");
+  }
+
+  return userAfterInsert.id;
 }
 
-export const getLocalFallbackSession = cache(async (): Promise<Session> => {
-  const userId = await ensureLocalFallbackUserId();
+function getAuthBypassUserIdPromise(): Promise<string> {
+  globalThis.__openHarnessAuthBypassUserIdPromise ??= ensureAuthBypassUserId();
+  return globalThis.__openHarnessAuthBypassUserIdPromise;
+}
 
-  return {
-    created: Date.now(),
-    authProvider: "github",
-    user: {
-      id: userId,
-      ...LOCAL_FALLBACK_USER,
-    },
-  };
-});
+export const getLocalFallbackSession = cache(async (): Promise<Session> => ({
+  created: Date.now(),
+  authProvider: "github",
+  user: {
+    id: await getAuthBypassUserIdPromise(),
+    ...LOCAL_FALLBACK_USER,
+  },
+}));
