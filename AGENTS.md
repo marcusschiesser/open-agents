@@ -81,6 +81,12 @@ Web -> Agent (packages/agent) -> Sandbox (packages/sandbox)
 
 See [Architecture & Workspace Structure](docs/agents/architecture.md) for details.
 
+## Daytona Local Dev
+
+- Do **not** use `daytonaio/sandbox:*‑slim` images for the local Daytona default snapshot in Docker Compose.
+- The `-slim` images do not include Node.js/package-manager tooling needed by the dev-server flow, so sandbox creation may work but Vite/Next/npm/bun dev servers will fail later.
+- For local Daytona defaults, use a non-slim `daytonaio/sandbox:<version>` image that includes Node tooling.
+
 ## File Organization & Separation of Concerns
 
 - Do **not** append new functionality to the bottom of an existing file by default.

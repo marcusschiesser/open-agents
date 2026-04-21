@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_DB: open_agents
       POSTGRES_USER: open_agents
@@ -98,6 +99,7 @@ services:
     environment:
       ENVIRONMENT: development
       API_PORT: 3003
+      DAYTONA_DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0
       DAYTONA_RUNNER_TOKEN: secret_api_token
       LOG_FILE_PATH: /home/daytona/runner/runner.log
       RESOURCE_LIMITS_DISABLED: "true"
@@ -151,7 +153,7 @@ services:
       retries: 20
     environment:
       OTEL_ENABLED: "false"
-      DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0-slim
+      DEFAULT_SNAPSHOT: daytonaio/sandbox:0.5.0
       ENCRYPTION_KEY: supersecretkey
       ENCRYPTION_SALT: supersecretsalt
       NODE_ENV: production
@@ -294,6 +296,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AUTH_BYPASS: "true"
+      POSTGRES_MAX_CONNECTIONS: "1"
     ports:
       - "3000:3000"
     working_dir: /app
