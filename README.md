@@ -1,297 +1,119 @@
 # Open Agents
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?project-name=open-agents&repository-name=open-agents&repository-url=https%3A%2F%2Fgithub.com%2Fvercel-labs%2Fopen-agents&demo-title=Open+Agents&demo-description=Open-source+reference+app+for+building+and+running+background+coding+agents+on+Vercel.&demo-url=https%3A%2F%2Fopen-agents.dev%2F&env=POSTGRES_URL%2CJWE_SECRET%2CENCRYPTION_KEY%2CNEXT_PUBLIC_VERCEL_APP_CLIENT_ID%2CVERCEL_APP_CLIENT_SECRET%2CNEXT_PUBLIC_GITHUB_CLIENT_ID%2CGITHUB_CLIENT_SECRET%2CGITHUB_APP_ID%2CGITHUB_APP_PRIVATE_KEY%2CNEXT_PUBLIC_GITHUB_APP_SLUG%2CGITHUB_WEBHOOK_SECRET&envDescription=Neon+can+provide+POSTGRES_URL+automatically.+Generate+JWE_SECRET+and+ENCRYPTION_KEY+yourself%2C+then+add+your+Vercel+OAuth+and+GitHub+App+credentials+for+a+full+deployment.&products=%255B%257B%2522type%2522%253A%2522integration%2522%252C%2522protocol%2522%253A%2522storage%2522%252C%2522productSlug%2522%253A%2522neon%2522%252C%2522integrationSlug%2522%253A%2522neon%2522%257D%252C%257B%2522type%2522%253A%2522integration%2522%252C%2522protocol%2522%253A%2522storage%2522%252C%2522productSlug%2522%253A%2522upstash-kv%2522%252C%2522integrationSlug%2522%253A%2522upstash%2522%257D%255D&skippable-integrations=1)
+This repository is based on Vercel's upstream Open Agents project:
 
-Open Agents is an open-source reference app for building and running background coding agents on Vercel. It includes the web UI, the agent runtime, sandbox orchestration, and the GitHub integration needed to go from prompt to code changes without keeping your laptop involved.
+- Upstream repo: https://github.com/vercel-labs/open-agents
 
-The repo is meant to be forked and adapted, not treated as a black box.
+This fork keeps the same general product idea and architecture, but is adapted to run without Vercel infrastructure.
 
-## What it is
+## What changed from upstream
 
-Open Agents is a three-layer system:
+This fork replaces the Vercel-specific infrastructure pieces with locally runnable alternatives.
+
+### 1. AI Gateway was replaced with direct model provider access
+
+Instead of routing model calls through Vercel AI Gateway, this repo talks directly to model providers.
+
+- OpenAI via `OPENAI_API_KEY`
+- Anthropic via `ANTHROPIC_API_KEY`
+
+You can provide either key or both. At least one is required if you want to run the agent.
+
+### 2. Vercel Sandbox was replaced with Daytona
+
+Instead of using Vercel Sandbox for the coding environment, this repo uses [Daytona](https://www.daytona.io/). 
+
+Daytona provides the sandbox container where the agent can:
+
+- read and write files
+- run shell commands
+- install dependencies
+- start dev servers
+- expose preview ports
+
+### 3. Everything is wrapped in Docker Compose
+
+This repo includes a `docker-compose.yml` that starts the app and all required local infrastructure together.
+
+That includes:
+
+- the Open Agents web app
+- PostgreSQL for the app
+- Daytona API, runner, proxy, and supporting services
+
+The goal is to make local startup a single command instead of requiring Vercel services.
+
+## Architecture
+
+The core shape is still the same:
 
 ```text
-Web -> Agent workflow -> Sandbox VM
+Web -> Agent -> Sandbox
 ```
 
-- The web app handles auth, sessions, chat, and streaming UI.
-- The agent runs as a durable workflow on Vercel.
-- The sandbox is the execution environment: filesystem, shell, git, dev servers, and preview ports.
+- `apps/web`: Next.js app and API routes
+- `packages/agent`: agent runtime and tools
+- `packages/sandbox`: sandbox abstraction and Daytona integration
 
-### The key architectural decision: the agent is not the sandbox
+## Running locally with Docker Compose
 
-The agent does not run inside the VM. It runs outside the sandbox and interacts with it through tools like file reads, edits, search, and shell commands.
+### Prerequisites
 
-That separation is the main point of the project:
+- Docker
+- Docker Compose
+- At least one model provider key:
+  - `OPENAI_API_KEY`, or
+  - `ANTHROPIC_API_KEY`
 
-- agent execution is not tied to a single request lifecycle
-- sandbox lifecycle can hibernate and resume independently
-- model/provider choices and sandbox implementation can evolve separately
-- the VM stays a plain execution environment instead of becoming the control plane
+### 1. Export your API key
 
-## Current capabilities
+Example:
 
-- chat-driven coding agent with file, search, shell, task, skill, and web tools
-- durable multi-step execution with Workflow SDK-backed runs, streaming, and cancellation
-- isolated sandboxes with Daytona as the default local provider and Vercel kept as an optional provider
-- repo cloning and branch work inside the sandbox
-- optional auto-commit, push, and PR creation after a successful run
-- session sharing via read-only links
-- optional voice input via ElevenLabs transcription
-
-## Runtime notes
-
-A few details that matter for understanding the current implementation:
-
-- Chat requests start a workflow run instead of executing the agent inline.
-- Each agent turn can continue across many persisted workflow steps.
-- Active runs can be resumed by reconnecting to the stream for the existing workflow.
-- Sandboxes use a base snapshot, expose ports `3000`, `5173`, `4321`, and `8000`, and hibernate after inactivity.
-- Auto-commit and auto-PR are supported, but they are preference-driven features, not always-on behavior.
-
-## What is actually required today
-
-These requirements are based on the current `apps/web` codepath, not older setup scripts.
-
-### Minimum runtime
-
-These are the hard requirements for the app to boot and load server state:
-
-```env
-POSTGRES_URL=
-JWE_SECRET=
+```bash
+export OPENAI_API_KEY=your_openai_key
 ```
 
-### Required to sign in and actually use the hosted app
+or:
 
-A useful deployment also needs token encryption plus Vercel OAuth sign-in:
-
-```env
-ENCRYPTION_KEY=
-NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
-VERCEL_APP_CLIENT_SECRET=
+```bash
+export ANTHROPIC_API_KEY=your_anthropic_key
 ```
 
-Without these, the site can deploy, but Vercel sign-in will not work.
+You can also put these in a local `.env` file that Docker Compose will read.
 
-### Required for model access
-
-The app now uses direct provider SDKs instead of AI Gateway. Configure at least one
-model provider key:
-
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-```
-
-If neither key is set, the model picker will be empty and agent runs cannot start.
-
-### Required for GitHub repo access, pushes, and PRs
-
-If you want users to connect GitHub, install the app on repos/orgs, clone private repos, push branches, or open PRs, add these GitHub App values:
-
-```env
-NEXT_PUBLIC_GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_APP_ID=
-GITHUB_APP_PRIVATE_KEY=
-NEXT_PUBLIC_GITHUB_APP_SLUG=
-GITHUB_WEBHOOK_SECRET=
-```
-
-### Optional
-
-```env
-REDIS_URL=
-KV_URL=
-VERCEL_PROJECT_PRODUCTION_URL=
-NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=
-VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
-ELEVENLABS_API_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-AUTH_BYPASS=
-DAYTONA_API_URL=
-DAYTONA_API_KEY=
-DAYTONA_TARGET=
-```
-
-- `REDIS_URL` / `KV_URL`: optional skills metadata cache (falls back to in-memory when not configured).
-- `VERCEL_PROJECT_PRODUCTION_URL` / `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`: canonical production URL for metadata and some callback behavior.
-- `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: override the default sandbox snapshot.
-- `ELEVENLABS_API_KEY`: voice transcription.
-- `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`: direct model-provider access for the chat runtime and model picker.
-- `AUTH_BYPASS`: when set to `true`, bypasses cookie auth and returns a synthetic local session without touching the `users` table. Intended for local development only.
-- `DAYTONA_API_URL` / `DAYTONA_API_KEY` / `DAYTONA_TARGET`: use Daytona as the sandbox backend; local Docker Compose wires these automatically.
-
-## Deploy your own copy on Vercel
-
-Recommended path: deploy this repo at the repo root on Vercel, then layer on auth and GitHub integration.
-
-1. Fork this repo.
-2. Create a PostgreSQL database and copy its connection string.
-3. Generate these secrets:
-
-   ```bash
-   openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'   # JWE_SECRET
-   openssl rand -hex 32                                    # ENCRYPTION_KEY
-   ```
-
-4. Import the repo into Vercel.
-5. Add at least these env vars in Vercel project settings:
-
-   ```env
-   POSTGRES_URL=
-   JWE_SECRET=
-   ENCRYPTION_KEY=
-   ```
-
-6. Deploy once to get a stable production URL.
-7. Create a Vercel OAuth app with callback URL:
-
-   ```text
-   https://YOUR_DOMAIN/api/auth/vercel/callback
-   ```
-
-8. Add these env vars and redeploy:
-
-   ```env
-   NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
-   VERCEL_APP_CLIENT_SECRET=
-   ```
-
-9. If you want the full GitHub-enabled coding-agent flow, create a GitHub App using:
-
-   - Homepage URL: `https://YOUR_DOMAIN`
-   - Callback URL: `https://YOUR_DOMAIN/api/github/app/callback`
-   - Setup URL: `https://YOUR_DOMAIN/api/github/app/callback`
-
-   In the GitHub App settings:
-   - enable "Request user authorization (OAuth) during installation"
-   - use the GitHub App's Client ID and Client Secret for `NEXT_PUBLIC_GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
-   - make the app public if you want org installs to work cleanly
-
-10. Add the GitHub App env vars and redeploy.
-11. Optionally add Redis/KV and the canonical production URL vars.
-
-## Local setup
-
-### Recommended local path: Docker Compose with Daytona
-
-This repo now includes a local stack that starts PostgreSQL, Daytona, and the web app together, with Daytona as the default sandbox provider.
+### 2. Start the stack
 
 ```bash
 docker compose up -d --build
 ```
 
-The stack exposes:
+This starts the full local stack, including Daytona.
 
-- web app: `http://localhost:3000`
-- Daytona proxy: `http://localhost:4000`
+### 3. Open the app
 
-The `web` container bootstraps a local Daytona API key automatically and repairs the seeded local Daytona org quotas so sandbox creation works without extra manual setup.
-Docker Compose also sets `AUTH_BYPASS=true` so local development can skip sign-in without hitting the database for a fallback user.
-Pass `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` into `docker compose up` from your shell or `.env` file so the local app can list and invoke models.
+Open:
 
-### Manual local path
+- `http://localhost:3000`
 
-1. Install dependencies:
+Useful local endpoints:
 
-   ```bash
-   bun install
-   ```
+- Open Agents web app: `http://localhost:3000`
+- Daytona preview proxy: `http://localhost:4000`
 
-2. Create your local env file:
-
-   ```bash
-   cp apps/web/.env.example apps/web/.env
-   ```
-
-3. Fill in the required values in `apps/web/.env`.
-4. Start the app:
-
-   ```bash
-   bun run web
-   ```
-
-If you already have a linked Vercel project, you can still pull env vars locally with `vc env pull`, but setup is now intentionally manual so you can see exactly which values matter.
-
-## Sandbox providers
-
-- `daytona`: default local provider. Used by Docker Compose and by new local sessions unless a different preference is saved.
-- `vercel`: still supported in code for hosted or existing Vercel-backed sessions.
-
-The app persists provider-tagged sandbox state, so existing Vercel sessions remain reconnectable after switching the default to Daytona.
-
-## Workflow manifest
-
-`apps/web/public/.well-known/workflow/v1/manifest.json` is generated output from workflow discovery. Do not hand-maintain it; expect it to drift when workflow files or discovery order change during local development.
-
-## OAuth and integration setup
-
-### Vercel OAuth
-
-Create a Vercel OAuth app and use this callback:
-
-```text
-https://YOUR_DOMAIN/api/auth/vercel/callback
-```
-
-For local development, use:
-
-```text
-http://localhost:3000/api/auth/vercel/callback
-```
-
-Then set:
-
-```env
-NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=...
-VERCEL_APP_CLIENT_SECRET=...
-```
-
-### GitHub App
-
-You do not need a separate GitHub OAuth app. Open Agents uses the GitHub App's user authorization flow.
-
-Create a GitHub App for installation-based repo access and configure:
-
-- Homepage URL: `https://YOUR_DOMAIN`
-- Callback URL: `https://YOUR_DOMAIN/api/github/app/callback`
-- Setup URL: `https://YOUR_DOMAIN/api/github/app/callback`
-- enable "Request user authorization (OAuth) during installation"
-- make the app public if you want org installs to work cleanly
-
-For local development, use `http://localhost:3000/api/github/app/callback` for the callback/setup URL and `http://localhost:3000` as the homepage URL.
-
-Then set:
-
-```env
-NEXT_PUBLIC_GITHUB_CLIENT_ID=...   # GitHub App Client ID
-GITHUB_CLIENT_SECRET=...           # GitHub App Client Secret
-GITHUB_APP_ID=...
-GITHUB_APP_PRIVATE_KEY=...
-NEXT_PUBLIC_GITHUB_APP_SLUG=...
-GITHUB_WEBHOOK_SECRET=...
-```
-
-`GITHUB_APP_PRIVATE_KEY` can be stored as the PEM contents with escaped newlines or as a base64-encoded PEM.
-
-## Useful commands
+### 4. Stop the stack
 
 ```bash
-bun run web
-bun run check
-bun run typecheck
-bun run ci
-bun run sandbox:snapshot-base
+docker compose down
 ```
 
-## Repo layout
+If you also want to remove volumes:
 
-```text
-apps/web         Next.js app, workflows, auth, chat UI
-packages/agent   agent implementation, tools, subagents, skills
-packages/sandbox sandbox abstraction and Vercel sandbox integration
-packages/shared  shared utilities
+```bash
+docker compose down -v
 ```
+
+## Local development notes
+
+- Local Docker Compose enables auth bypass for easier local testing.
+
+
