@@ -20,6 +20,15 @@ export {
   type SandboxConnectConfig,
 } from "./factory";
 
+// daytona
+export {
+  connectDaytonaSandbox,
+  DaytonaSandbox,
+  type DaytonaSandboxConfig,
+  type DaytonaSandboxConnectConfig,
+  type DaytonaState,
+} from "./daytona";
+
 // vercel
 export {
   connectVercelSandbox,

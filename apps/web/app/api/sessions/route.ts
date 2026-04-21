@@ -30,6 +30,10 @@ import {
   vercelProjectSelectionSchema,
   type VercelProjectSelection,
 } from "@/lib/vercel/types";
+import {
+  DEFAULT_APP_SANDBOX_TYPE,
+  isAppSandboxType,
+} from "@/lib/sandbox/provider";
 
 interface CreateSessionRequest {
   title?: string;
@@ -38,7 +42,7 @@ interface CreateSessionRequest {
   branch?: string;
   cloneUrl?: string;
   isNewBranch?: boolean;
-  sandboxType?: "vercel";
+  sandboxType?: "daytona" | "vercel";
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
   vercelProject?: VercelProjectSelection | null;
@@ -201,7 +205,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body.sandboxType && body.sandboxType !== "vercel") {
+  if (body.sandboxType && !isAppSandboxType(body.sandboxType)) {
     return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
   }
 
@@ -265,7 +269,7 @@ export async function POST(req: Request) {
     branch,
     cloneUrl,
     isNewBranch,
-    sandboxType = "vercel",
+    sandboxType = DEFAULT_APP_SANDBOX_TYPE,
     autoCommitPush,
     autoCreatePr,
   } = body;

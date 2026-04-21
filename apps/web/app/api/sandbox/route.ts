@@ -31,6 +31,10 @@ import {
   getSessionSandboxName,
   hasResumableSandboxState,
 } from "@/lib/sandbox/utils";
+import {
+  DEFAULT_APP_SANDBOX_TYPE,
+  isAppSandboxType,
+} from "@/lib/sandbox/provider";
 import { getServerSession } from "@/lib/session/get-server-session";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 // import { getUserVercelToken } from "@/lib/vercel/token";
@@ -40,7 +44,7 @@ interface CreateSandboxRequest {
   branch?: string;
   isNewBranch?: boolean;
   sessionId?: string;
-  sandboxType?: "vercel";
+  sandboxType?: "daytona" | "vercel";
 }
 
 // async function syncVercelProjectEnvVarsToSandbox(params: {
@@ -112,7 +116,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body.sandboxType && body.sandboxType !== "vercel") {
+  if (body.sandboxType && !isAppSandboxType(body.sandboxType)) {
     return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
   }
 
@@ -190,9 +194,11 @@ export async function POST(req: Request) {
       }
     : undefined;
 
+  const sandboxType = body.sandboxType ?? DEFAULT_APP_SANDBOX_TYPE;
+
   const sandbox = await connectSandbox({
     state: {
-      type: "vercel",
+      type: sandboxType,
       ...(sandboxName ? { sandboxName } : {}),
       source,
     },
@@ -235,17 +241,19 @@ export async function POST(req: Request) {
       //   );
       // }
 
-      try {
-        await syncVercelCliAuthForSandbox({
-          userId: session.user.id,
-          sessionRecord,
-          sandbox,
-        });
-      } catch (error) {
-        console.error(
-          `Failed to prepare Vercel CLI auth for session ${sessionRecord.id}:`,
-          error,
-        );
+      if (sandboxType === "vercel") {
+        try {
+          await syncVercelCliAuthForSandbox({
+            userId: session.user.id,
+            sessionRecord,
+            sandbox,
+          });
+        } catch (error) {
+          console.error(
+            `Failed to prepare Vercel CLI auth for session ${sessionRecord.id}:`,
+            error,
+          );
+        }
       }
 
       try {
@@ -273,7 +281,7 @@ export async function POST(req: Request) {
     createdAt: Date.now(),
     timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
     currentBranch: repoUrl ? branch : undefined,
-    mode: "vercel",
+    mode: sandboxType,
     timing: { readyMs },
   });
 }

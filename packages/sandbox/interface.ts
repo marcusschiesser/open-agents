@@ -141,14 +141,19 @@ export interface Sandbox {
   execDetached?(command: string, cwd: string): Promise<{ commandId: string }>;
 
   /**
-   * Get the public URL for an exposed port.
+   * Resolve the public URL for an exposed port.
    */
-  domain?(port: number): string;
+  getPreviewUrl(port: number): Promise<string>;
 
   /**
    * Stop and clean up the sandbox.
    */
   stop(): Promise<void>;
+
+  /**
+   * Pause the sandbox while preserving resumable filesystem state when supported.
+   */
+  pause?(): Promise<void>;
 
   /**
    * Extend the sandbox timeout by the specified duration.

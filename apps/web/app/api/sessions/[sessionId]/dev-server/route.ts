@@ -675,18 +675,21 @@ function getDevServerStateFilePath(workingDirectory: string): string {
   return path.posix.join(workingDirectory, DEV_SERVER_STATE_FILENAME);
 }
 
-function buildDevServerResponse(
+async function resolveSandboxPreviewUrl(
+  sandbox: ConnectedSandbox,
+  port: number,
+): Promise<string> {
+  return sandbox.getPreviewUrl(port);
+}
+
+async function buildDevServerResponse(
   sandbox: ConnectedSandbox,
   target: Pick<ResolvedDevServerTarget, "packagePath" | "port">,
-): DevServerLaunchResponse {
-  if (!sandbox.domain) {
-    throw new Error("Sandbox does not expose preview URLs");
-  }
-
+): Promise<DevServerLaunchResponse> {
   return {
     packagePath: target.packagePath,
     port: target.port,
-    url: sandbox.domain(target.port),
+    url: await resolveSandboxPreviewUrl(sandbox, target.port),
   };
 }
 
@@ -928,7 +931,9 @@ export async function POST(_req: Request, context: RouteContext) {
         port: persistedTarget.port,
       });
       if (existingPersistedPid) {
-        return Response.json(buildDevServerResponse(sandbox, persistedTarget));
+        return Response.json(
+          await buildDevServerResponse(sandbox, persistedTarget),
+        );
       }
 
       await clearPersistedDevServerTarget(sandbox);
@@ -950,7 +955,7 @@ export async function POST(_req: Request, context: RouteContext) {
     });
     if (existingPid) {
       await writePersistedDevServerTarget(sandbox, target);
-      return Response.json(buildDevServerResponse(sandbox, target));
+      return Response.json(await buildDevServerResponse(sandbox, target));
     }
 
     const { packageManager, installRootAbs } = await detectPackageManager(
@@ -984,7 +989,7 @@ export async function POST(_req: Request, context: RouteContext) {
     }
 
     await writePersistedDevServerTarget(sandbox, target);
-    return Response.json(buildDevServerResponse(sandbox, target));
+    return Response.json(await buildDevServerResponse(sandbox, target));
   } catch (error) {
     console.error("Failed to launch dev server:", error);
     return Response.json(

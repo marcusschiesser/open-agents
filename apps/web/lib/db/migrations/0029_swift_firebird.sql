@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ALTER COLUMN "default_sandbox_type" SET DEFAULT 'daytona';

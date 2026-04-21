@@ -74,7 +74,11 @@ export async function POST(req: Request) {
 
   try {
     const sandbox = await connectSandbox(sandboxState);
-    await sandbox.stop();
+    if (sandbox.pause) {
+      await sandbox.pause();
+    } else {
+      await sandbox.stop();
+    }
 
     const clearedState = clearSandboxState(sessionRecord.sandboxState);
     await updateSession(sessionId, {
@@ -135,16 +139,6 @@ export async function PUT(req: Request) {
   const { sessionRecord } = sessionContext;
   const sandboxType = sessionRecord.sandboxState?.type ?? "vercel";
 
-  if (sandboxType !== "vercel") {
-    return Response.json(
-      {
-        error:
-          "Snapshot restoration is only supported for the current cloud sandbox provider",
-      },
-      { status: 400 },
-    );
-  }
-
   if (hasRuntimeSandboxState(sessionRecord.sandboxState)) {
     const restoredFrom =
       getResumableSandboxName(sessionRecord.sandboxState) ??
@@ -164,8 +158,12 @@ export async function PUT(req: Request) {
     sessionRecord.sandboxState,
   );
   const legacySnapshotId = sessionRecord.snapshotUrl;
+  const supportsLegacySnapshotRestore = sandboxType === "vercel";
 
-  if (!persistentSandboxName && !legacySnapshotId) {
+  if (
+    !persistentSandboxName &&
+    (!supportsLegacySnapshotRestore || !legacySnapshotId)
+  ) {
     console.error(
       `[Snapshot Restore] session=${sessionId} error=no_resume_state sandboxType=${sandboxType}`,
     );
@@ -204,12 +202,18 @@ export async function PUT(req: Request) {
                 timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
                 ports: DEFAULT_SANDBOX_PORTS,
                 resume: true,
+                createIfMissing: true,
+                persistent: true,
               },
             );
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
-            if (!legacySnapshotId || !isSandboxNotFoundError(message)) {
+            if (
+              !supportsLegacySnapshotRestore ||
+              !legacySnapshotId ||
+              !isSandboxNotFoundError(message)
+            ) {
               throw error;
             }
 

@@ -32,7 +32,7 @@ export function isSandboxState(value: unknown): value is SandboxState {
     typeof value === "object" &&
     value !== null &&
     "type" in value &&
-    value.type === "vercel"
+    (value.type === "vercel" || value.type === "daytona")
   );
 }
 

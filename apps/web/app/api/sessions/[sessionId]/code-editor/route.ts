@@ -38,6 +38,13 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+async function resolveSandboxPreviewUrl(
+  sandbox: ConnectedSandbox,
+  port: number,
+): Promise<string | null> {
+  return sandbox.getPreviewUrl(port);
+}
+
 async function connectCodeEditorSandbox(sessionId: string, userId: string) {
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId,
@@ -222,10 +229,11 @@ export async function GET(_req: Request, context: RouteContext) {
     const { sandbox } = sandboxResult;
     const port = CODE_SERVER_PORT;
     const running = await isCodeServerRunning(sandbox);
+    const url = running ? await resolveSandboxPreviewUrl(sandbox, port) : null;
 
     return Response.json({
       running,
-      url: running && sandbox.domain ? sandbox.domain(port) : null,
+      url,
       port,
     } satisfies CodeEditorStatusResponse);
   } catch (error) {
@@ -270,7 +278,8 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
-    if (!sandbox.domain) {
+    const previewUrl = await resolveSandboxPreviewUrl(sandbox, CODE_SERVER_PORT);
+    if (!previewUrl) {
       return Response.json(
         { error: "Sandbox does not expose preview URLs" },
         { status: 500 },
@@ -283,7 +292,7 @@ export async function POST(req: Request, context: RouteContext) {
     // Reuse an existing code-server process when we can positively identify it.
     if (await isCodeServerRunning(sandbox)) {
       return Response.json({
-        url: sandbox.domain(port),
+        url: previewUrl,
         port,
       } satisfies CodeEditorLaunchResponse);
     }
@@ -315,7 +324,7 @@ export async function POST(req: Request, context: RouteContext) {
     }
 
     return Response.json({
-      url: sandbox.domain(port),
+      url: previewUrl,
       port,
     } satisfies CodeEditorLaunchResponse);
   } catch (error) {

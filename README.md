@@ -33,7 +33,7 @@ That separation is the main point of the project:
 
 - chat-driven coding agent with file, search, shell, task, skill, and web tools
 - durable multi-step execution with Workflow SDK-backed runs, streaming, and cancellation
-- isolated Vercel sandboxes with snapshot-based resume
+- isolated sandboxes with Daytona as the default local provider and Vercel kept as an optional provider
 - repo cloning and branch work inside the sandbox
 - optional auto-commit, push, and PR creation after a successful run
 - session sharing via read-only links
@@ -96,12 +96,16 @@ VERCEL_PROJECT_PRODUCTION_URL=
 NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=
 VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
 ELEVENLABS_API_KEY=
+DAYTONA_API_URL=
+DAYTONA_API_KEY=
+DAYTONA_TARGET=
 ```
 
 - `REDIS_URL` / `KV_URL`: optional skills metadata cache (falls back to in-memory when not configured).
 - `VERCEL_PROJECT_PRODUCTION_URL` / `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`: canonical production URL for metadata and some callback behavior.
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: override the default sandbox snapshot.
 - `ELEVENLABS_API_KEY`: voice transcription.
+- `DAYTONA_API_URL` / `DAYTONA_API_KEY` / `DAYTONA_TARGET`: use Daytona as the sandbox backend; local Docker Compose wires these automatically.
 
 ## Deploy your own copy on Vercel
 
@@ -155,6 +159,23 @@ Recommended path: deploy this repo at the repo root on Vercel, then layer on aut
 
 ## Local setup
 
+### Recommended local path: Docker Compose with Daytona
+
+This repo now includes a local stack that starts PostgreSQL, Daytona, and the web app together, with Daytona as the default sandbox provider.
+
+```bash
+docker compose up -d --build
+```
+
+The stack exposes:
+
+- web app: `http://localhost:3000`
+- Daytona proxy: `http://localhost:4000`
+
+The `web` container bootstraps a local Daytona API key automatically and repairs the seeded local Daytona org quotas so sandbox creation works without extra manual setup.
+
+### Manual local path
+
 1. Install dependencies:
 
    ```bash
@@ -175,6 +196,17 @@ Recommended path: deploy this repo at the repo root on Vercel, then layer on aut
    ```
 
 If you already have a linked Vercel project, you can still pull env vars locally with `vc env pull`, but setup is now intentionally manual so you can see exactly which values matter.
+
+## Sandbox providers
+
+- `daytona`: default local provider. Used by Docker Compose and by new local sessions unless a different preference is saved.
+- `vercel`: still supported in code for hosted or existing Vercel-backed sessions.
+
+The app persists provider-tagged sandbox state, so existing Vercel sessions remain reconnectable after switching the default to Daytona.
+
+## Workflow manifest
+
+`apps/web/public/.well-known/workflow/v1/manifest.json` is generated output from workflow discovery. Do not hand-maintain it; expect it to drift when workflow files or discovery order change during local development.
 
 ## OAuth and integration setup
 

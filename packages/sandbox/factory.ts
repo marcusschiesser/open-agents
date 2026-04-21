@@ -1,5 +1,7 @@
 import type { Sandbox, SandboxHooks } from "./interface";
 import type { SandboxStatus } from "./types";
+import { connectDaytona } from "./daytona/connect";
+import type { DaytonaState } from "./daytona/state";
 import { connectVercel } from "./vercel/connect";
 import type { VercelState } from "./vercel/state";
 
@@ -10,7 +12,9 @@ export type { SandboxStatus };
  * Unified sandbox state type.
  * Use `type` discriminator to determine which sandbox implementation to use.
  */
-export type SandboxState = { type: "vercel" } & VercelState;
+export type SandboxState =
+  | ({ type: "daytona" } & DaytonaState)
+  | ({ type: "vercel" } & VercelState);
 
 /**
  * Base connect options for all sandbox types.
@@ -48,7 +52,7 @@ export interface ConnectOptions {
  * Configuration for connecting to a sandbox.
  */
 export type SandboxConnectConfig = {
-  state: { type: "vercel" } & VercelState;
+  state: SandboxState;
   options?: ConnectOptions;
 };
 
@@ -67,9 +71,13 @@ export async function connectSandbox(
 
   if (isNewApi) {
     const config = configOrState as SandboxConnectConfig;
-    return connectVercel(config.state, config.options);
+    return config.state.type === "daytona"
+      ? connectDaytona(config.state, config.options)
+      : connectVercel(config.state, config.options);
   }
 
   const state = configOrState as SandboxState;
-  return connectVercel(state, legacyOptions);
+  return state.type === "daytona"
+    ? connectDaytona(state, legacyOptions)
+    : connectVercel(state, legacyOptions);
 }

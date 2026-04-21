@@ -1015,6 +1015,10 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     return this.session.domain(port);
   }
 
+  async getPreviewUrl(port: number): Promise<string> {
+    return this.domain(port);
+  }
+
   /**
    * Create a native Vercel snapshot of the sandbox filesystem.
    * IMPORTANT: This automatically stops the sandbox after snapshot creation.

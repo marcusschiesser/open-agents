@@ -63,6 +63,7 @@ function createSandbox() {
     readdir: async () => {
       throw new Error("not implemented");
     },
+    getPreviewUrl: async () => "https://example.vercel.run",
     stop: async () => {},
   };
 

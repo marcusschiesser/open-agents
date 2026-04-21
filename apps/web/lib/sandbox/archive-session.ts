@@ -153,7 +153,11 @@ async function finalizeArchivedSessionSandbox(
     }
 
     const sandbox = await connectSandbox(archivedSession.sandboxState);
-    await sandbox.stop();
+    if (sandbox.pause) {
+      await sandbox.pause();
+    } else {
+      await sandbox.stop();
+    }
 
     await updateSession(sessionId, {
       snapshotUrl: null,

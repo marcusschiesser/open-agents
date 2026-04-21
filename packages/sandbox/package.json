@@ -8,6 +8,11 @@
     ".": "./index.ts",
     "./interface.js": "./interface.ts",
     "./types.js": "./types.ts",
+    "./daytona": "./daytona/index.ts",
+    "./daytona/index.js": "./daytona/index.ts",
+    "./daytona/sandbox.js": "./daytona/sandbox.ts",
+    "./daytona/config.js": "./daytona/config.ts",
+    "./daytona/state.js": "./daytona/state.ts",
     "./vercel": "./vercel/index.ts",
     "./vercel/index.js": "./vercel/index.ts",
     "./vercel/snapshot-refresh.js": "./vercel/snapshot-refresh.ts",
@@ -18,6 +23,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@daytona/sdk": "^0.167.0",
     "@vercel/sandbox": "2.0.0-beta.11"
   },
   "devDependencies": {

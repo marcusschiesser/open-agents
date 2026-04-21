@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
+import {
+  DEFAULT_APP_SANDBOX_TYPE,
+  SANDBOX_TYPES,
+  isAppSandboxType,
+} from "@/lib/sandbox/provider";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
@@ -30,7 +35,7 @@ export interface UserPreferencesData {
 const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultModelId: APP_DEFAULT_MODEL_ID,
   defaultSubagentModelId: null,
-  defaultSandboxType: "vercel",
+  defaultSandboxType: DEFAULT_APP_SANDBOX_TYPE,
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,
@@ -42,7 +47,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   enabledModelIds: [],
 };
 
-const VALID_SANDBOX_TYPES: SandboxType[] = ["vercel"];
+const VALID_SANDBOX_TYPES: SandboxType[] = [...SANDBOX_TYPES];
 const VALID_DIFF_MODES: DiffMode[] = ["unified", "split"];
 
 function normalizeSandboxType(value: unknown): SandboxType {
@@ -50,11 +55,8 @@ function normalizeSandboxType(value: unknown): SandboxType {
     return "vercel";
   }
 
-  if (
-    typeof value === "string" &&
-    VALID_SANDBOX_TYPES.includes(value as SandboxType)
-  ) {
-    return value as SandboxType;
+  if (isAppSandboxType(value) && VALID_SANDBOX_TYPES.includes(value)) {
+    return value;
   }
 
   return DEFAULT_PREFERENCES.defaultSandboxType;

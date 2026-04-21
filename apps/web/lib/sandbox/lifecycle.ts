@@ -184,9 +184,6 @@ export async function evaluateSandboxLifecycle(
   if (!canOperateOnSandbox(sandboxState)) {
     return { action: "skipped", reason: "sandbox-not-operable" };
   }
-  if (sandboxState.type !== "vercel") {
-    return { action: "skipped", reason: "unsupported-sandbox-type" };
-  }
 
   const nowMs = Date.now();
   const dueAtMs = getLifecycleDueAtMs(session);

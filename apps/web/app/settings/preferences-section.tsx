@@ -37,6 +37,7 @@ import {
 } from "@/lib/model-options";
 
 const SANDBOX_OPTIONS: Array<{ id: SandboxType; name: string }> = [
+  { id: "daytona", name: "Daytona" },
   { id: "vercel", name: "Vercel" },
 ];
 
