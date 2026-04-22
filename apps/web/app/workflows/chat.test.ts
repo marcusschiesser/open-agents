@@ -9,6 +9,7 @@ let runStatus: string = "running";
 const spies = {
   persistAssistantMessage: mock(() => Promise.resolve()),
   persistSandboxState: mock(() => Promise.resolve()),
+  claimActiveStream: mock(() => Promise.resolve("claimed")),
   clearActiveStream: mock(() => Promise.resolve()),
   recordWorkflowUsage: mock(() => Promise.resolve()),
   refreshDiffCache: mock(() => Promise.resolve()),
@@ -225,7 +226,7 @@ mock.module("ai", () => ({
     }),
 }));
 
-mock.module("@open-harness/agent", () => ({}));
+mock.module("@open-agents/agent", () => ({}));
 
 const { runAgentWorkflow } = await import("./chat");
 
@@ -282,6 +283,33 @@ describe("runAgentWorkflow", () => {
     } catch (error) {
       expect((error as Error).message).toContain("at least one message");
     }
+  });
+
+  test("exits before side effects when another workflow owns the stream slot", async () => {
+    spies.claimActiveStream.mockImplementationOnce(() =>
+      Promise.resolve("conflict"),
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(writtenChunks).toEqual([]);
+    expect(agentInputMessages).toBeUndefined();
+    expect(spies.persistAssistantMessage).not.toHaveBeenCalled();
+    expect(spies.clearActiveStream).not.toHaveBeenCalled();
+    expect(spies.recordWorkflowUsage).not.toHaveBeenCalled();
+  });
+
+  test("continues when claiming the stream errors", async () => {
+    spies.claimActiveStream.mockImplementationOnce(() =>
+      Promise.resolve("error"),
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const types = writtenChunks.map((chunk) => chunk.type);
+    expect(types[0]).toBe("start");
+    expect(types[types.length - 1]).toBe("finish");
+    expect(spies.persistAssistantMessage).toHaveBeenCalledTimes(1);
   });
 
   test("sends start and finish chunks to writable", async () => {

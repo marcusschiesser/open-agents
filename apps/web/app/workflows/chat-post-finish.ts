@@ -1,9 +1,10 @@
 import type { LanguageModelUsage } from "ai";
-import type { SandboxState, Sandbox } from "@open-harness/sandbox";
+import type { SandboxState, Sandbox } from "@open-agents/sandbox";
 import type { WebAgentUIMessage } from "@/app/types";
 import type { AutoCommitResult } from "@/lib/chat/auto-commit-direct";
 import type { AutoCreatePrResult } from "@/lib/chat/auto-pr-direct";
 import {
+  claimChatActiveStreamId,
   compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
   touchChat,
@@ -176,7 +177,7 @@ export async function persistSandboxState(
 ): Promise<void> {
   "use step";
   try {
-    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { connectSandbox } = await import("@open-agents/sandbox");
     const sandbox = await connectSandbox(sandboxState);
     const currentState = sandbox.getState?.() as SandboxState | undefined;
     if (currentState) {
@@ -222,6 +223,65 @@ export async function clearActiveStream(
   }
 }
 
+const ACTIVE_STREAM_CLAIM_MAX_ATTEMPTS = 3;
+const ACTIVE_STREAM_CLAIM_RETRY_DELAY_MS = 50;
+
+export type ClaimActiveStreamResult = "claimed" | "conflict" | "error";
+
+/**
+ * First-step self-registration of the workflow's runId onto the chat.
+ *
+ * The HTTP handler that called `start()` also tries to write activeStreamId
+ * via `compareAndSetChatActiveStreamId`, but that write is best-effort: if
+ * the handler is killed (client disconnect → runtime teardown, unhandled
+ * exception, etc.) between `start()` and its CAS, the workflow runs to
+ * completion with activeStreamId never set, and the chat page can't resume.
+ *
+ * Running this as the workflow's first step ties activeStreamId existence to
+ * workflow existence: as long as the workflow is running, the slot is
+ * claimed. Idempotent with the handler's CAS — whichever writes first wins,
+ * the other is a no-op.
+ *
+ * Returns:
+ * - `"claimed"` when the slot is now owned by this workflow run.
+ * - `"conflict"` when a different run already owns the slot.
+ * - `"error"` when the claim could not be persisted after retries.
+ */
+export async function claimActiveStream(
+  chatId: string,
+  workflowRunId: string,
+): Promise<ClaimActiveStreamResult> {
+  "use step";
+
+  for (
+    let attempt = 1;
+    attempt <= ACTIVE_STREAM_CLAIM_MAX_ATTEMPTS;
+    attempt++
+  ) {
+    try {
+      const ok = await claimChatActiveStreamId(chatId, workflowRunId);
+      if (!ok) {
+        console.warn(
+          "[workflow] activeStreamId slot owned by a different run:",
+          { chatId, workflowRunId },
+        );
+        return "conflict";
+      }
+      return "claimed";
+    } catch (error) {
+      if (attempt === ACTIVE_STREAM_CLAIM_MAX_ATTEMPTS) {
+        console.error("[workflow] Failed to claim activeStreamId:", error);
+        // Non-fatal: workflow can still run, just won't be resumable.
+        return "error";
+      }
+
+      await delay(ACTIVE_STREAM_CLAIM_RETRY_DELAY_MS);
+    }
+  }
+
+  return "error";
+}
+
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -249,7 +309,7 @@ export async function recordWorkflowUsage(
 
   try {
     const { collectTaskToolUsageEvents, sumLanguageModelUsage } =
-      await import("@open-harness/agent");
+      await import("@open-agents/agent");
 
     if (workflowRun) {
       try {
@@ -352,7 +412,7 @@ export async function refreshDiffCache(
 ): Promise<void> {
   "use step";
   try {
-    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { connectSandbox } = await import("@open-agents/sandbox");
     const { computeAndCacheDiff } = await import("@/lib/diff/compute-diff");
     const sandbox: Sandbox = await connectSandbox(sandboxState);
     await computeAndCacheDiff({ sandbox, sessionId });
@@ -366,7 +426,7 @@ export async function hasAutoCommitChangesStep(params: {
 }): Promise<boolean> {
   "use step";
   try {
-    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { connectSandbox } = await import("@open-agents/sandbox");
     const sandbox: Sandbox = await connectSandbox(params.sandboxState);
     const statusResult = await sandbox.exec(
       "git status --porcelain",
@@ -395,7 +455,7 @@ export async function runAutoCommitStep(params: {
 }): Promise<AutoCommitResult> {
   "use step";
   try {
-    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { connectSandbox } = await import("@open-agents/sandbox");
     const { performAutoCommit } = await import("@/lib/chat/auto-commit-direct");
     const sandbox = await connectSandbox(params.sandboxState);
     return await performAutoCommit({
@@ -426,7 +486,7 @@ export async function runAutoCreatePrStep(params: {
 }): Promise<AutoCreatePrResult> {
   "use step";
   try {
-    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { connectSandbox } = await import("@open-agents/sandbox");
     const { performAutoCreatePr } = await import("@/lib/chat/auto-pr-direct");
     const sandbox = await connectSandbox(params.sandboxState);
     const result = await performAutoCreatePr({

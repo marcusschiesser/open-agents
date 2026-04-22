@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-const CODE_EDITOR_PID_FILE = "/tmp/open-harness-code-server.pid";
+const CODE_EDITOR_PID_FILE = "/tmp/open-agents-code-server.pid";
 const RUNNING_CODE_SERVER_PID = "9001";
 
 const currentSessionRecord = {
@@ -115,13 +115,15 @@ const execDetachedMock = mock(async (command: string, cwd: string) => {
 
   return { commandId: "cmd-1" };
 });
-const domainMock = mock((port: number) => `https://sb-${port}.vercel.run`);
+const getPreviewUrlMock = mock(
+  async (port: number) => `https://sb-${port}.vercel.run`,
+);
 const connectSandboxMock = mock(async () => ({
   workingDirectory: "/vercel/sandbox",
   exec: execMock,
   readFile: readFileMock,
   execDetached: execDetachedMock,
-  domain: domainMock,
+  getPreviewUrl: getPreviewUrlMock,
 }));
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -129,7 +131,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireOwnedSessionWithSandboxGuard: requireOwnedSessionWithSandboxGuardMock,
 }));
 
-mock.module("@open-harness/sandbox", () => ({
+mock.module("@open-agents/sandbox", () => ({
   connectSandbox: connectSandboxMock,
 }));
 
@@ -161,7 +163,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
     execMock.mockClear();
     readFileMock.mockClear();
     execDetachedMock.mockClear();
-    domainMock.mockClear();
+    getPreviewUrlMock.mockClear();
   });
 
   test("GET ignores unrelated processes that happen to use the editor port", async () => {

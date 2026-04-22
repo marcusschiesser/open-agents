@@ -1,4 +1,4 @@
-import type { AgentModelSelection } from "@open-harness/agent";
+import type { AgentModelSelection } from "@open-agents/agent";
 import {
   getConfiguredDefaultModelId,
   resolveAvailableModelId,

@@ -1,5 +1,5 @@
-import type { SandboxState } from "@open-harness/sandbox";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import type { SandboxState } from "@open-agents/sandbox";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./client";
 import {
   chatMessages,
@@ -464,6 +464,39 @@ export async function compareAndSetChatActiveStreamId(
     .update(chats)
     .set({ activeStreamId: nextStreamId })
     .where(and(eq(chats.id, chatId), activeStreamMatch))
+    .returning({ id: chats.id });
+
+  return Boolean(updated);
+}
+
+/**
+ * Idempotently claims the activeStreamId slot for the given workflow run.
+ *
+ * Returns true when the slot is now owned by `workflowRunId` — i.e. it was
+ * either null (we just set it) or already equal to `workflowRunId` (no-op).
+ * Returns false when the slot is set to a different runId (conflict).
+ *
+ * Used so a workflow can self-persist its runId as its first step, ensuring
+ * `activeStreamId` is recorded as long as the workflow itself is running —
+ * even if the HTTP handler that started it was killed before its own CAS
+ * write completed.
+ */
+export async function claimChatActiveStreamId(
+  chatId: string,
+  workflowRunId: string,
+): Promise<boolean> {
+  const [updated] = await db
+    .update(chats)
+    .set({ activeStreamId: workflowRunId })
+    .where(
+      and(
+        eq(chats.id, chatId),
+        or(
+          isNull(chats.activeStreamId),
+          eq(chats.activeStreamId, workflowRunId),
+        ),
+      ),
+    )
     .returning({ id: chats.id });
 
   return Boolean(updated);
