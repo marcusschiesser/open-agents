@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import type { Session } from "./types";
 import { auth } from "@/lib/auth/config";
+import {
+  getLocalFallbackSession,
+  isAuthBypassEnabled,
+} from "./local-fallback-session";
 
 function extractUsername(user: {
   name?: string | null;
@@ -20,6 +24,10 @@ export async function getSessionFromReq(
   });
 
   if (!baSession?.user) {
+    if (isAuthBypassEnabled()) {
+      return getLocalFallbackSession();
+    }
+
     return undefined;
   }
 

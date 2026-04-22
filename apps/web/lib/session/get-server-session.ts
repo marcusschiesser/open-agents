@@ -2,6 +2,10 @@ import { headers } from "next/headers";
 import { cache } from "react";
 import { auth } from "@/lib/auth/config";
 import type { Session } from "./types";
+import {
+  getLocalFallbackSession,
+  isAuthBypassEnabled,
+} from "./local-fallback-session";
 
 function extractUsername(user: {
   name?: string | null;
@@ -20,6 +24,10 @@ export const getServerSession = cache(
     });
 
     if (!baSession?.user) {
+      if (isAuthBypassEnabled()) {
+        return getLocalFallbackSession();
+      }
+
       return undefined;
     }
 
