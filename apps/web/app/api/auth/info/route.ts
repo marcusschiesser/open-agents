@@ -1,10 +1,8 @@
-import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { getGitHubAccount } from "@/lib/db/accounts";
 import { hasDatabaseConfig } from "@/lib/db/client";
+import { hasGitHubAccount as checkGitHubLinked } from "@/lib/github/token";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import { userExists } from "@/lib/db/users";
-import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
 import { getSessionFromReq } from "@/lib/session/server";
 import type { SessionUserInfo } from "@/lib/session/types";
 import { getUserVercelToken } from "@/lib/vercel/token";
@@ -87,25 +85,19 @@ export async function GET(req: NextRequest) {
       ? requiresVercelReconnect(session.user.id)
       : Promise.resolve(false);
 
-  // Run the user-existence check in parallel with the connection queries
+  // Run the user-existence check in parallel with the auth queries
   // so there is zero added latency on the happy path.
-  const [exists, ghAccount, installations, vercelReconnectRequired] =
+  const [exists, hasGitHubAccount, installations, vercelReconnectRequired] =
     await Promise.all([
       userExists(session.user.id),
-      getGitHubAccount(session.user.id),
+      checkGitHubLinked(session.user.id),
       getInstallationsByUserId(session.user.id),
       vercelReconnectPromise,
     ]);
 
-  // The session cookie (JWE) is self-contained and can outlive the user record.
-  // If the user no longer exists, clear the stale cookie.
   if (!exists) {
-    const store = await cookies();
-    store.delete(SESSION_COOKIE_NAME);
     return Response.json(UNAUTHENTICATED);
   }
-
-  const hasGitHubAccount = ghAccount !== null;
   const hasGitHubInstallations = installations.length > 0;
   const hasGitHub = hasGitHubAccount || hasGitHubInstallations;
 

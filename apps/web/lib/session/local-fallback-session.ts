@@ -1,11 +1,12 @@
 import { cache } from "react";
 import { and, eq } from "drizzle-orm";
 import { db, hasDatabaseConfig } from "@/lib/db/client";
-import { users } from "@/lib/db/schema";
+import { accounts, users } from "@/lib/db/schema";
 import type { Session } from "./types";
 
 const AUTH_BYPASS_ENABLED = process.env.AUTH_BYPASS === "true";
 const LOCAL_FALLBACK_EXTERNAL_ID = "local-dev-user";
+const LOCAL_FALLBACK_ACCOUNT_ID = "local-dev-github-account";
 const LOCAL_FALLBACK_USER_ID = "local-dev-user";
 
 const LOCAL_FALLBACK_USER = {
@@ -30,55 +31,53 @@ async function ensureAuthBypassUserId(): Promise<string> {
   }
 
   const existingUser = await db.query.users.findFirst({
-    where: and(
-      eq(users.provider, "github"),
-      eq(users.externalId, LOCAL_FALLBACK_EXTERNAL_ID),
-    ),
+    where: eq(users.id, LOCAL_FALLBACK_USER_ID),
     columns: {
       id: true,
     },
   });
 
-  if (existingUser) {
-    return existingUser.id;
-  }
-
   const now = new Date();
 
-  await db
-    .insert(users)
-    .values({
+  if (!existingUser) {
+    await db.insert(users).values({
       id: LOCAL_FALLBACK_USER_ID,
-      provider: "github",
-      externalId: LOCAL_FALLBACK_EXTERNAL_ID,
-      accessToken: "local-dev-access-token",
       username: LOCAL_FALLBACK_USER.username,
       email: LOCAL_FALLBACK_USER.email,
+      emailVerified: false,
       name: LOCAL_FALLBACK_USER.name,
       avatarUrl: LOCAL_FALLBACK_USER.avatar,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
-    })
-    .onConflictDoNothing({
-      target: [users.provider, users.externalId],
     });
-
-  const userAfterInsert = await db.query.users.findFirst({
-    where: and(
-      eq(users.provider, "github"),
-      eq(users.externalId, LOCAL_FALLBACK_EXTERNAL_ID),
-    ),
-    columns: {
-      id: true,
-    },
-  });
-
-  if (!userAfterInsert) {
-    throw new Error("Failed to initialize auth bypass user");
   }
 
-  return userAfterInsert.id;
+  const existingAccount = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.userId, LOCAL_FALLBACK_USER_ID),
+        eq(accounts.providerId, "github"),
+      ),
+    )
+    .limit(1);
+
+  if (existingAccount.length === 0) {
+    await db.insert(accounts).values({
+      id: LOCAL_FALLBACK_ACCOUNT_ID,
+      accountId: LOCAL_FALLBACK_EXTERNAL_ID,
+      providerId: "github",
+      userId: LOCAL_FALLBACK_USER_ID,
+      accessToken: "local-dev-access-token",
+      scope: "repo",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  return LOCAL_FALLBACK_USER_ID;
 }
 
 function getAuthBypassUserIdPromise(): Promise<string> {

@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
-
-const deletedCookies: string[] = [];
 
 type TestSession = {
   authProvider: "vercel" | "github";
@@ -16,16 +13,10 @@ type TestSession = {
 
 let session: TestSession;
 let exists = true;
-let githubAccount: { id: string } | null = null;
+let hasGitHubLinked = false;
 let installations: Array<{ installationId: number }> = [];
 
-mock.module("next/headers", () => ({
-  cookies: async () => ({
-    delete: (name: string) => {
-      deletedCookies.push(name);
-    },
-  }),
-}));
+mock.module("server-only", () => ({}));
 
 mock.module("@/lib/session/server", () => ({
   getSessionFromReq: async () => session,
@@ -35,8 +26,17 @@ mock.module("@/lib/db/users", () => ({
   userExists: async () => exists,
 }));
 
-mock.module("@/lib/db/accounts", () => ({
-  getGitHubAccount: async () => githubAccount,
+mock.module("@/lib/db/client", () => ({
+  db: {},
+  hasDatabaseConfig: () => true,
+}));
+
+mock.module("@/lib/vercel/token", () => ({
+  getUserVercelToken: async () => "vercel-token",
+}));
+
+mock.module("@/lib/github/token", () => ({
+  hasGitHubAccount: async () => hasGitHubLinked,
 }));
 
 mock.module("@/lib/db/installations", () => ({
@@ -54,6 +54,9 @@ function createRequest(): NextRequest {
 
 describe("GET /api/auth/info", () => {
   beforeEach(() => {
+    globalThis.fetch = mock(
+      async () => new Response(null, { status: 200 }),
+    ) as unknown as typeof fetch;
     session = {
       authProvider: "vercel",
       user: {
@@ -64,9 +67,8 @@ describe("GET /api/auth/info", () => {
       },
     };
     exists = true;
-    githubAccount = null;
+    hasGitHubLinked = false;
     installations = [];
-    deletedCookies.length = 0;
   });
 
   test("returns unauthenticated when there is no session", async () => {
@@ -79,7 +81,7 @@ describe("GET /api/auth/info", () => {
     expect(await response.json()).toEqual({});
   });
 
-  test("clears the session cookie when the user record is gone", async () => {
+  test("returns unauthenticated when the user record is gone", async () => {
     exists = false;
     const { GET } = await routeModulePromise;
 
@@ -87,11 +89,10 @@ describe("GET /api/auth/info", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({});
-    expect(deletedCookies).toEqual([SESSION_COOKIE_NAME]);
   });
 
   test("reports GitHub account and installation state", async () => {
-    githubAccount = { id: "github-account-1" };
+    hasGitHubLinked = true;
     installations = [{ installationId: 1 }];
     const { GET } = await routeModulePromise;
 
@@ -104,6 +105,7 @@ describe("GET /api/auth/info", () => {
       hasGitHub: true,
       hasGitHubAccount: true,
       hasGitHubInstallations: true,
+      vercelReconnectRequired: false,
     });
   });
 
@@ -119,6 +121,7 @@ describe("GET /api/auth/info", () => {
       hasGitHub: false,
       hasGitHubAccount: false,
       hasGitHubInstallations: false,
+      vercelReconnectRequired: false,
     });
   });
 });

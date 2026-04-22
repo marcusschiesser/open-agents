@@ -28,8 +28,14 @@ mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
 
+mock.module("@/lib/db/client", () => ({
+  db: {},
+  hasDatabaseConfig: () => true,
+}));
+
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async (_userId: string) => preferencesState,
+  toUserPreferencesData: () => ({ ...preferencesState }),
   updateUserPreferences: async (
     _userId: string,
     updates: Record<string, unknown>,
