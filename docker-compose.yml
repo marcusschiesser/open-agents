@@ -61,12 +61,23 @@ services:
   daytona-dex:
     image: dexidp/dex:v2.42.0
     entrypoint:
-      ["sh", "-c", "touch /var/dex/dex.db && exec dex serve /etc/dex/config.yaml"]
+      [
+        "sh",
+        "-c",
+        "touch /var/dex/dex.db && exec dex serve /etc/dex/config.yaml",
+      ]
     volumes:
       - ./docker/daytona/dex-config.yaml:/etc/dex/config.yaml:ro
       - daytona-dex-data:/var/dex
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:5556/dex/.well-known/openid-configuration"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "--quiet",
+          "http://localhost:5556/dex/.well-known/openid-configuration",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -295,6 +306,7 @@ services:
       DAYTONA_DB_PASSWORD: pass
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AUTH_BYPASS: "true"
       POSTGRES_MAX_CONNECTIONS: "1"
     ports:

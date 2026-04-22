@@ -89,6 +89,27 @@ export const STATIC_AVAILABLE_LANGUAGE_MODELS: AvailableModel[] = [
     modelType: "language",
     context_window: 272_000,
   },
+  {
+    id: "openrouter/z-ai/glm-5.1",
+    name: "GLM 5.1",
+    description: "Z-AI GLM model via OpenRouter.",
+    modelType: "language",
+    context_window: 202_752,
+  },
+  {
+    id: "openrouter/moonshotai/kimi-k2.6",
+    name: "Kimi K2.6",
+    description: "Moonshot AI Kimi model via OpenRouter.",
+    modelType: "language",
+    context_window: 262_144,
+  },
+  {
+    id: "openrouter/minimax/minimax-m2.7",
+    name: "MiniMax M2.7",
+    description: "MiniMax model via OpenRouter.",
+    modelType: "language",
+    context_window: 196_608,
+  },
 ];
 
 export function hasOpenAIKey(): boolean {
@@ -99,6 +120,10 @@ export function hasAnthropicKey(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
+export function hasOpenRouterKey(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY?.trim());
+}
+
 export function isProviderConfigured(provider: string): boolean {
   if (provider === "openai") {
     return hasOpenAIKey();
@@ -106,6 +131,10 @@ export function isProviderConfigured(provider: string): boolean {
 
   if (provider === "anthropic") {
     return hasAnthropicKey();
+  }
+
+  if (provider === "openrouter") {
+    return hasOpenRouterKey();
   }
 
   return false;

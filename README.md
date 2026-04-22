@@ -16,8 +16,11 @@ Instead of routing model calls through Vercel AI Gateway, this repo talks direct
 
 - OpenAI via `OPENAI_API_KEY`
 - Anthropic via `ANTHROPIC_API_KEY`
+- OpenRouter via `OPENROUTER_API_KEY` (provides access to `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, and `minimax/minimax-m2.7`)
 
-You can provide either key or both. At least one is required if you want to run the agent.
+You can provide any combination of keys. At least one is required if you want to run the agent.
+
+See [https://openrouter.ai/](https://openrouter.ai/) for details on obtaining an OpenRouter API key.
 
 ### 2. Vercel Sandbox was replaced with Daytona
 
@@ -63,7 +66,8 @@ Web -> Agent -> Sandbox
 - Docker Compose
 - At least one model provider key:
   - `OPENAI_API_KEY`, or
-  - `ANTHROPIC_API_KEY`
+  - `ANTHROPIC_API_KEY`, or
+  - `OPENROUTER_API_KEY`
 
 ### 1. Export your API key
 
@@ -77,6 +81,12 @@ or:
 
 ```bash
 export ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+or:
+
+```bash
+export OPENROUTER_API_KEY=your_openrouter_key
 ```
 
 You can also put these in a local `.env` file that Docker Compose will read.

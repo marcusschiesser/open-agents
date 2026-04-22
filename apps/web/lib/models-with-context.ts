@@ -194,5 +194,7 @@ export async function fetchAvailableLanguageModelsWithContext(): Promise<
     fetchModelsDevMetadataMap(),
   ]);
 
-  return models.map((model) => addModelsDevMetadata(model, modelsDevMetadataMap));
+  return models.map((model) =>
+    addModelsDevMetadata(model, modelsDevMetadataMap),
+  );
 }

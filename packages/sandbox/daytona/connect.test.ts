@@ -10,10 +10,7 @@ let connectError: Error | null = null;
 
 mock.module("./sandbox", () => ({
   DaytonaSandbox: {
-    connect: async (
-      sandboxName: string,
-      options?: Record<string, unknown>,
-    ) => {
+    connect: async (sandboxName: string, options?: Record<string, unknown>) => {
       connectCalls.push({ sandboxName, options });
       if (connectError) {
         throw connectError;

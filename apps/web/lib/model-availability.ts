@@ -1,6 +1,7 @@
 import {
   APP_DEFAULT_MODEL_ID,
   DEFAULT_MODEL_ID,
+  hasOpenRouterKey,
   isProviderConfigured,
 } from "@/lib/models";
 
@@ -19,7 +20,11 @@ export function filterDisabledModels<T extends { id: string }>(
 export function resolveAvailableModelId(modelId: string): string {
   const provider = modelId.split("/", 1)[0];
 
-  if (!provider || isModelDisabled(modelId) || !isProviderConfigured(provider)) {
+  if (
+    !provider ||
+    isModelDisabled(modelId) ||
+    !isProviderConfigured(provider)
+  ) {
     return getConfiguredDefaultModelId();
   }
 
@@ -27,12 +32,19 @@ export function resolveAvailableModelId(modelId: string): string {
 }
 
 export function getConfiguredDefaultModelId(): string {
-  if (!isModelDisabled(APP_DEFAULT_MODEL_ID) && isProviderConfigured("openai")) {
+  if (
+    !isModelDisabled(APP_DEFAULT_MODEL_ID) &&
+    isProviderConfigured("openai")
+  ) {
     return APP_DEFAULT_MODEL_ID;
   }
 
   if (isProviderConfigured("anthropic")) {
     return DEFAULT_MODEL_ID;
+  }
+
+  if (hasOpenRouterKey()) {
+    return "openrouter/moonshotai/kimi-k2.6";
   }
 
   return APP_DEFAULT_MODEL_ID;

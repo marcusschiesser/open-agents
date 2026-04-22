@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/command";
 import {
   ProviderIcon,
-  getProviderFromModelId,
+  getDisplayProviderFromModelId,
   getProviderDisplayName,
   stripProviderPrefix,
 } from "@/components/provider-icons";
@@ -49,7 +49,7 @@ function groupByProvider(items: ModelComboboxItem[]) {
   const groups: Record<string, ModelComboboxItem[]> = {};
   const providers: string[] = [];
   for (const item of items) {
-    const provider = item.provider ?? getProviderFromModelId(item.id);
+    const provider = item.provider ?? getDisplayProviderFromModelId(item.id);
     if (!groups[provider]) {
       groups[provider] = [];
       providers.push(provider);
@@ -88,7 +88,7 @@ export function ModelCombobox({
   const selectedItem = items.find((item) => item.id === value);
   const selectedProvider =
     selectedItem?.provider ??
-    (selectedItem ? getProviderFromModelId(selectedItem.id) : undefined);
+    (selectedItem ? getDisplayProviderFromModelId(selectedItem.id) : undefined);
   const displayText = selectedItem
     ? stripProviderPrefix(selectedItem.label, selectedProvider ?? "")
     : placeholder;
@@ -135,7 +135,7 @@ export function ModelCombobox({
               <CommandGroup key={group.provider} heading={group.label}>
                 {group.options.map((item) => {
                   const provider =
-                    item.provider ?? getProviderFromModelId(item.id);
+                    item.provider ?? getDisplayProviderFromModelId(item.id);
                   const shortLabel = stripProviderPrefix(item.label, provider);
                   return (
                     <CommandItem

@@ -11,6 +11,7 @@ let currentSession: {
 const originalFetch = globalThis.fetch;
 const originalOpenAIKey = process.env.OPENAI_API_KEY;
 const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
 
 function getRequestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") {
@@ -34,6 +35,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env.OPENAI_API_KEY = originalOpenAIKey;
   process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+  process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
 });
 
 describe("/api/models", () => {
@@ -43,6 +45,7 @@ describe("/api/models", () => {
     currentSession = null;
     process.env.OPENAI_API_KEY = "openai-test-key";
     process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    process.env.OPENROUTER_API_KEY = "openrouter-test-key";
 
     globalThis.fetch = mock((input: RequestInfo | URL, _init?: RequestInit) => {
       requestedUrls.push(getRequestUrl(input));
@@ -93,6 +96,7 @@ describe("/api/models", () => {
 
   test("shows only configured providers", async () => {
     delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
 
     const { GET } = await routeModulePromise;
     const response = await GET(new Request("http://localhost/api/models"));
@@ -104,14 +108,15 @@ describe("/api/models", () => {
     };
 
     expect(body.models.length).toBeGreaterThan(0);
-    expect(body.models.every((model) => model.id.startsWith("anthropic/"))).toBe(
-      true,
-    );
+    expect(
+      body.models.every((model) => model.id.startsWith("anthropic/")),
+    ).toBe(true);
   });
 
   test("returns no models when neither provider key is set", async () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
 
     const { GET } = await routeModulePromise;
     const response = await GET(new Request("http://localhost/api/models"));
@@ -123,6 +128,48 @@ describe("/api/models", () => {
     };
 
     expect(body.models).toEqual([]);
+  });
+
+  test("shows OpenRouter models when the key is set", async () => {
+    const { GET } = await routeModulePromise;
+    const response = await GET(new Request("http://localhost/api/models"));
+
+    expect(response.ok).toBe(true);
+
+    const body = (await response.json()) as {
+      models: Array<{ id: string }>;
+    };
+
+    expect(
+      body.models.some((model) => model.id === "openrouter/z-ai/glm-5.1"),
+    ).toBe(true);
+    expect(
+      body.models.some(
+        (model) => model.id === "openrouter/moonshotai/kimi-k2.6",
+      ),
+    ).toBe(true);
+    expect(
+      body.models.some(
+        (model) => model.id === "openrouter/minimax/minimax-m2.7",
+      ),
+    ).toBe(true);
+  });
+
+  test("hides OpenRouter models when the key is missing", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(new Request("http://localhost/api/models"));
+
+    expect(response.ok).toBe(true);
+
+    const body = (await response.json()) as {
+      models: Array<{ id: string }>;
+    };
+
+    expect(
+      body.models.some((model) => model.id.startsWith("openrouter/")),
+    ).toBe(false);
   });
 
   test("hides Claude Opus models for managed trial users", async () => {
@@ -139,12 +186,12 @@ describe("/api/models", () => {
       models: Array<{ id: string }>;
     };
 
-    expect(body.models.some((model) => model.id === "anthropic/claude-opus-4.6")).toBe(
-      false,
-    );
-    expect(body.models.some((model) => model.id === "anthropic/claude-haiku-4.5")).toBe(
-      true,
-    );
+    expect(
+      body.models.some((model) => model.id === "anthropic/claude-opus-4.6"),
+    ).toBe(false);
+    expect(
+      body.models.some((model) => model.id === "anthropic/claude-haiku-4.5"),
+    ).toBe(true);
   });
 
   test("keeps valid models.dev metadata when sibling fields are invalid", async () => {
@@ -189,18 +236,18 @@ describe("/api/models", () => {
       }>;
     };
 
-    expect(body.models.find((model) => model.id === "openai/gpt-5.3-codex")).toMatchObject(
-      {
-        id: "openai/gpt-5.3-codex",
-        context_window: 200_000,
-        cost: {
-          input: 1.25,
-          output: 10,
-          context_over_200k: {
-            input: 2.5,
-          },
+    expect(
+      body.models.find((model) => model.id === "openai/gpt-5.3-codex"),
+    ).toMatchObject({
+      id: "openai/gpt-5.3-codex",
+      context_window: 200_000,
+      cost: {
+        input: 1.25,
+        output: 10,
+        context_over_200k: {
+          input: 2.5,
         },
       },
-    );
+    });
   });
 });

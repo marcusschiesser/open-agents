@@ -1,5 +1,11 @@
-import { createAnthropic, type AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
-import { createOpenAI, type OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+import {
+  createAnthropic,
+  type AnthropicLanguageModelOptions,
+} from "@ai-sdk/anthropic";
+import {
+  createOpenAI,
+  type OpenAIResponsesProviderOptions,
+} from "@ai-sdk/openai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import {
   defaultSettingsMiddleware,
@@ -85,7 +91,7 @@ export function mergeProviderOptions(
   return merged;
 }
 
-export type SupportedModelProvider = "anthropic" | "openai";
+export type SupportedModelProvider = "anthropic" | "openai" | "openrouter";
 export type GatewayModelId = `${SupportedModelProvider}/${string}`;
 
 export interface GatewayOptions {
@@ -169,15 +175,21 @@ function parseModelId(modelId: GatewayModelId): {
 } {
   const separatorIndex = modelId.indexOf("/");
   if (separatorIndex <= 0 || separatorIndex === modelId.length - 1) {
-    throw new Error(`Invalid model id "${modelId}". Expected "<provider>/<model>".`);
+    throw new Error(
+      `Invalid model id "${modelId}". Expected "<provider>/<model>".`,
+    );
   }
 
   const provider = modelId.slice(0, separatorIndex);
   const providerModelId = modelId.slice(separatorIndex + 1);
 
-  if (provider !== "anthropic" && provider !== "openai") {
+  if (
+    provider !== "anthropic" &&
+    provider !== "openai" &&
+    provider !== "openrouter"
+  ) {
     throw new Error(
-      `Unsupported model provider "${provider}" for "${modelId}". Supported providers: anthropic, openai.`,
+      `Unsupported model provider "${provider}" for "${modelId}". Supported providers: anthropic, openai, openrouter.`,
     );
   }
 
@@ -187,20 +199,33 @@ function parseModelId(modelId: GatewayModelId): {
   };
 }
 
-function getRequiredApiKey(envVarName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY"): string {
+function getRequiredApiKey(
+  envVarName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY" | "OPENROUTER_API_KEY",
+): string {
   const apiKey = process.env[envVarName]?.trim();
 
   if (!apiKey) {
-    throw new Error(
-      `${envVarName} is required to use direct ${envVarName === "OPENAI_API_KEY" ? "OpenAI" : "Anthropic"} models.`,
-    );
+    const label =
+      envVarName === "OPENAI_API_KEY"
+        ? "OpenAI"
+        : envVarName === "ANTHROPIC_API_KEY"
+          ? "Anthropic"
+          : "OpenRouter";
+    throw new Error(`${envVarName} is required to use direct ${label} models.`);
   }
 
   return apiKey;
 }
 
 const openAIProviderCache = new Map<string, ReturnType<typeof createOpenAI>>();
-const anthropicProviderCache = new Map<string, ReturnType<typeof createAnthropic>>();
+const anthropicProviderCache = new Map<
+  string,
+  ReturnType<typeof createAnthropic>
+>();
+const openRouterProviderCache = new Map<
+  string,
+  ReturnType<typeof createOpenAI>
+>();
 
 function getOpenAIProvider(apiKey: string) {
   const cachedProvider = openAIProviderCache.get(apiKey);
@@ -224,6 +249,24 @@ function getAnthropicProvider(apiKey: string) {
   return provider;
 }
 
+function getOpenRouterProvider(apiKey: string) {
+  const cachedProvider = openRouterProviderCache.get(apiKey);
+  if (cachedProvider) {
+    return cachedProvider;
+  }
+
+  const provider = createOpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey,
+    headers: {
+      "HTTP-Referer": "https://open-harness.dev",
+      "X-Title": "Open Harness",
+    },
+  });
+  openRouterProviderCache.set(apiKey, provider);
+  return provider;
+}
+
 function createBaseLanguageModel(modelId: GatewayModelId): LanguageModel {
   const { provider, providerModelId } = parseModelId(modelId);
 
@@ -236,6 +279,10 @@ function createBaseLanguageModel(modelId: GatewayModelId): LanguageModel {
       return getOpenAIProvider(getRequiredApiKey("OPENAI_API_KEY"))(
         providerModelId,
       );
+    case "openrouter":
+      return getOpenRouterProvider(
+        getRequiredApiKey("OPENROUTER_API_KEY"),
+      ).chat(providerModelId);
   }
 }
 

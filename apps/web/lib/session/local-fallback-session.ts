@@ -86,11 +86,13 @@ function getAuthBypassUserIdPromise(): Promise<string> {
   return globalThis.__openHarnessAuthBypassUserIdPromise;
 }
 
-export const getLocalFallbackSession = cache(async (): Promise<Session> => ({
-  created: Date.now(),
-  authProvider: "github",
-  user: {
-    id: await getAuthBypassUserIdPromise(),
-    ...LOCAL_FALLBACK_USER,
-  },
-}));
+export const getLocalFallbackSession = cache(
+  async (): Promise<Session> => ({
+    created: Date.now(),
+    authProvider: "github",
+    user: {
+      id: await getAuthBypassUserIdPromise(),
+      ...LOCAL_FALLBACK_USER,
+    },
+  }),
+);

@@ -9,7 +9,7 @@ import {
   type ModelVariant,
 } from "@/lib/model-variants";
 import {
-  getProviderFromModelId,
+  getDisplayProviderFromModelId,
   stripProviderPrefix,
 } from "@/components/provider-icons";
 
@@ -26,7 +26,7 @@ export interface ModelOption {
 
 function toBaseModelOption(model: AvailableModel): ModelOption {
   const label = getModelDisplayName(model);
-  const provider = getProviderFromModelId(model.id);
+  const provider = getDisplayProviderFromModelId(model.id);
   return {
     id: model.id,
     label,
@@ -46,7 +46,7 @@ function toVariantOption(
   const baseLabel = baseModel
     ? getModelDisplayName(baseModel)
     : variant.baseModelId;
-  const provider = getProviderFromModelId(variant.baseModelId);
+  const provider = getDisplayProviderFromModelId(variant.baseModelId);
 
   return {
     id: variant.id,

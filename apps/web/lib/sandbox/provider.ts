@@ -6,7 +6,6 @@ export const DEFAULT_APP_SANDBOX_TYPE: AppSandboxType = "daytona";
 
 export function isAppSandboxType(value: unknown): value is AppSandboxType {
   return (
-    typeof value === "string" &&
-    SANDBOX_TYPES.includes(value as AppSandboxType)
+    typeof value === "string" && SANDBOX_TYPES.includes(value as AppSandboxType)
   );
 }

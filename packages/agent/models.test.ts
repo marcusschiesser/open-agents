@@ -1,13 +1,29 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ProviderOptionsByProvider } from "./models";
 
-const openAIInvocations: Array<{ apiKey: string; modelId: string }> = [];
+const openAIInvocations: Array<{
+  apiKey: string;
+  modelId: string;
+  baseURL?: string;
+}> = [];
 const anthropicInvocations: Array<{ apiKey: string; modelId: string }> = [];
+const openRouterInvocations: Array<{
+  apiKey: string;
+  modelId: string;
+  baseURL?: string;
+}> = [];
 
 mock.module("@ai-sdk/openai", () => ({
-  createOpenAI: ({ apiKey }: { apiKey: string }) => (modelId: string) => {
-    openAIInvocations.push({ apiKey, modelId });
-    return { provider: "openai", modelId };
+  createOpenAI: ({ apiKey, baseURL }: { apiKey: string; baseURL?: string }) => {
+    const createModel = (modelId: string) => {
+      if (baseURL === "https://openrouter.ai/api/v1") {
+        openRouterInvocations.push({ apiKey, modelId, baseURL });
+        return { provider: "openrouter", modelId };
+      }
+      openAIInvocations.push({ apiKey, modelId });
+      return { provider: "openai", modelId };
+    };
+    return Object.assign(createModel, { chat: createModel });
   },
 }));
 
@@ -36,6 +52,7 @@ const {
 
 const originalOpenAIKey = process.env.OPENAI_API_KEY;
 const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
 
 describe("shouldApplyOpenAIReasoningDefaults", () => {
   test("returns true for existing GPT-5 variants", () => {
@@ -251,13 +268,16 @@ describe("gateway", () => {
   beforeEach(() => {
     openAIInvocations.length = 0;
     anthropicInvocations.length = 0;
+    openRouterInvocations.length = 0;
     process.env.OPENAI_API_KEY = "openai-test-key";
     process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    process.env.OPENROUTER_API_KEY = "openrouter-test-key";
   });
 
   afterEach(() => {
     process.env.OPENAI_API_KEY = originalOpenAIKey;
     process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
   });
 
   test("creates an OpenAI model via the provider factory", () => {
@@ -303,6 +323,30 @@ describe("gateway", () => {
 
     expect(() => gateway("anthropic/claude-haiku-4.5")).toThrow(
       "ANTHROPIC_API_KEY is required to use direct Anthropic models.",
+    );
+  });
+
+  test("creates an OpenRouter model via the provider factory", () => {
+    const model = gateway("openrouter/z-ai/glm-5.1");
+
+    expect(model as unknown).toEqual({
+      provider: "openrouter",
+      modelId: "z-ai/glm-5.1",
+    });
+    expect(openRouterInvocations).toEqual([
+      {
+        apiKey: "openrouter-test-key",
+        modelId: "z-ai/glm-5.1",
+        baseURL: "https://openrouter.ai/api/v1",
+      },
+    ]);
+  });
+
+  test("fails fast when the OpenRouter key is missing", () => {
+    delete process.env.OPENROUTER_API_KEY;
+
+    expect(() => gateway("openrouter/moonshotai/kimi-k2.6")).toThrow(
+      "OPENROUTER_API_KEY is required to use direct OpenRouter models.",
     );
   });
 

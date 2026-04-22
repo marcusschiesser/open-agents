@@ -278,7 +278,10 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
-    const previewUrl = await resolveSandboxPreviewUrl(sandbox, CODE_SERVER_PORT);
+    const previewUrl = await resolveSandboxPreviewUrl(
+      sandbox,
+      CODE_SERVER_PORT,
+    );
     if (!previewUrl) {
       return Response.json(
         { error: "Sandbox does not expose preview URLs" },

@@ -263,6 +263,7 @@ const providerDisplayNames: Record<string, string> = {
   fireworks: "Fireworks",
   meta: "Meta",
   zai: "ZAI",
+  minimax: "MiniMax",
 };
 
 /** Prefixes in model display names that match the provider brand (stripped in compact UI). */
@@ -273,12 +274,31 @@ const providerLabelPrefixes: Record<string, string[]> = {
   mistral: ["Mistral"],
   deepseek: ["DeepSeek"],
   meta: ["Meta"],
+  minimax: ["MiniMax"],
 };
 
 export function getProviderFromModelId(modelId: string): string {
   const slashIndex = modelId.indexOf("/");
   if (slashIndex === -1) return modelId;
   return modelId.slice(0, slashIndex);
+}
+
+/**
+ * Returns the display provider for a model ID.
+ * For OpenRouter models, the display provider is the second segment
+ * (e.g. "z-ai", "moonshotai", "minimax") so they appear as distinct
+ * providers in the UI.
+ */
+export function getDisplayProviderFromModelId(modelId: string): string {
+  const firstSlash = modelId.indexOf("/");
+  if (firstSlash === -1) return modelId;
+  const provider = modelId.slice(0, firstSlash);
+  if (provider === "openrouter") {
+    const secondSlash = modelId.indexOf("/", firstSlash + 1);
+    if (secondSlash === -1) return provider;
+    return modelId.slice(firstSlash + 1, secondSlash);
+  }
+  return provider;
 }
 
 /**
